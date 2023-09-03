@@ -177,8 +177,8 @@ pub fn all_move_indices(moves: Vec<ScoredMove<SymmetricMove>>) -> Vec<ScoredMove
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::time::Instant;
-    use itertools::Itertools;
     use crate::min_max::{alpha_beta, Player, score_possible_moves, ScoredMove};
     use crate::stoplight::{Board, Cells, CellState, print_3_by_3, Strategy, to_score_board};
 
@@ -303,7 +303,10 @@ mod tests {
                 let score = m.score;
                 m.min_max_move.expanded_indices().into_iter().map(move |i| ScoredMove::new(score, i))
             })
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
+
+        assert_eq!(scored_expanded_moves.len(), 9);
+
         let min_score = scored_expanded_moves.iter().map(|m| m.score).min().unwrap();
         for m in scored_expanded_moves {
             // all other moves have the same (lower) score

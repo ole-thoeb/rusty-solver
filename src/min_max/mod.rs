@@ -1,12 +1,10 @@
 pub mod symmetry;
 
 use itertools::Itertools;
-use std::collections::HashSet;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash};
 use std::ops::Not;
 
-use strum_macros::EnumIter;
 use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
 
 #[derive(Eq, PartialEq, Hash)]
