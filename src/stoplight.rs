@@ -6,6 +6,7 @@ use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
 
 use crate::min_max::*;
+use crate::min_max::symmetry::{GridSymmetry3x3, GridSymmetryAxes, GridSymmetryAxis, Symmetry};
 
 #[derive(Eq, PartialEq)]
 #[derive(Debug, Copy, Clone, Hash)]
@@ -33,10 +34,11 @@ pub enum BoardStatus {
 }
 
 impl Board {
-    fn symmetries(&self) -> Vec<Symmetry> {
-        Symmetry::iter().filter(|symmetry| {
-            symmetry.symmetric_pairs().iter().all(|(f, s)| self.cells[*f as usize] == self.cells[*s as usize])
-        }).collect()
+    fn symmetry(&self) -> GridSymmetry3x3 {
+        let axes = GridSymmetryAxis::iter().filter(|symmetry| {
+            symmetry.symmetric_indices_3x3().iter().all(|(f, s)| self.cells[*f] == self.cells[*s])
+        }).collect::<GridSymmetryAxes>();
+        GridSymmetry3x3::new(axes)
     }
 
     fn status(&self) -> BoardStatus {
@@ -96,21 +98,21 @@ impl Strategy {
     }
 }
 
-impl MinMaxStrategy<Board, SymmetricMove> for Strategy {
+impl crate::min_max::Strategy<Board, SymmetricMove> for Strategy {
     fn possible_moves(state: &Board) -> Vec<SymmetricMove> {
-        let symmetries = state.symmetries();
+        let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
         let mut moves = Vec::new();
-        for (i, &cell_state) in state.cells.iter().enumerate() {
+        for (index, &cell_state) in state.cells.iter().enumerate() {
             if cell_state == CellState::RED {
                 continue;
             }
-            let normalised = normalise(&symmetries, i);
+            let normalised = symmetry.canonicalize(&index);
             if covered_index[normalised] {
                 continue;
             }
             covered_index[normalised] = true;
-            moves.push(SymmetricMove(i, symmetries.clone()))
+            moves.push(SymmetricMove(index, symmetry.clone()))
         }
         moves
     }
@@ -137,25 +139,16 @@ impl MinMaxStrategy<Board, SymmetricMove> for Strategy {
         }
     }
 
-    fn do_move(state: &mut Board, &SymmetricMove(index, _): &SymmetricMove, player: Player) {
-        state.cells[index] = match state.cells[index] {
+    fn do_move(state: &Board, SymmetricMove(index, _): &SymmetricMove, player: Player) -> Board {
+        let mut new_state = state.clone();
+        new_state.cells[*index] = match state.cells[*index] {
             CellState::EMPTY => CellState::GREEN,
             CellState::GREEN => CellState::YELLOW,
             CellState::YELLOW => CellState::RED,
             CellState::RED => panic!(),
         };
-        state.last_player = player;
-    }
-
-    fn undo_move(state: &mut Board, &SymmetricMove(index, _): &SymmetricMove, player: Player) {
-        state.cells[index] = match state.cells[index] {
-            CellState::GREEN => CellState::EMPTY,
-            CellState::YELLOW => CellState::GREEN,
-            CellState::RED => CellState::YELLOW,
-            CellState::EMPTY => panic!(),
-        };
-        debug_assert_eq!(state.last_player, player);
-        state.last_player = !player;
+        new_state.last_player = player;
+        return new_state;
     }
 
     fn cache(&mut self, state: &Board, entry: CacheEntry) {
@@ -176,7 +169,7 @@ pub fn choose_random_move(moves: Vec<ScoredMove<SymmetricMove>>) -> ScoredMove<u
 
 pub fn all_move_indices(moves: Vec<ScoredMove<SymmetricMove>>) -> Vec<ScoredMove<usize>> {
     moves.iter()
-        .flat_map(|m| m.min_max_move.expanded_index().into_iter().map(move |i| ScoredMove::new(m.score, i)))
+        .flat_map(|m| m.min_max_move.expanded_indices().into_iter().map(move |i| ScoredMove::new(m.score, i)))
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>()
@@ -184,7 +177,9 @@ pub fn all_move_indices(moves: Vec<ScoredMove<SymmetricMove>>) -> Vec<ScoredMove
 
 #[cfg(test)]
 mod tests {
-    use crate::min_max::{all_moves_scored, alpha_beta, Player};
+    use std::time::Instant;
+    use itertools::Itertools;
+    use crate::min_max::{alpha_beta, Player, score_possible_moves, ScoredMove};
     use crate::stoplight::{Board, Cells, CellState, print_3_by_3, Strategy, to_score_board};
 
     fn best_move_index_of(cells: [CellState; 9]) -> usize {
@@ -194,7 +189,7 @@ mod tests {
     }
 
     fn score_board(cells: Cells) -> [i32; 9] {
-        to_score_board(&all_moves_scored(&mut Strategy::new(), &mut Board::new(cells, Player::Max), 30))
+        to_score_board(&score_possible_moves(&mut Strategy::new(), &mut Board::new(cells, Player::Max), 30))
     }
 
     #[test]
@@ -238,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_board() {
+    fn empty_board_inspect() {
         fn score_and_print(cells: Cells) {
             let score_board = score_board(cells);
             print_3_by_3(&score_board);
@@ -292,5 +287,28 @@ mod tests {
             ];
             score_and_print(cells);
         }
+    }
+
+    #[test]
+    fn empty_board() {
+        let board = Board::empty();
+        let start = Instant::now();
+        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, u8::MAX);
+        println!("search on empty board took {}ms", start.elapsed().as_millis());
+        // center is best move
+        assert_eq!(scored_moves.iter().max_by_key(|m| m.score).map(|m| m.min_max_move.index()), Some(4));
+
+        let scored_expanded_moves = scored_moves.iter()
+            .flat_map(|m| {
+                let score = m.score;
+                m.min_max_move.expanded_indices().into_iter().map(move |i| ScoredMove::new(score, i))
+            })
+            .collect::<Vec<_>>();
+        let min_score = scored_expanded_moves.iter().map(|m| m.score).min().unwrap();
+        for m in scored_expanded_moves {
+            // all other moves have the same (lower) score
+            assert!(m.score == min_score || m.min_max_move == 4)
+        }
+
     }
 }
