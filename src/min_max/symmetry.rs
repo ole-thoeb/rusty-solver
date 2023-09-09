@@ -12,6 +12,21 @@ pub trait Symmetry<T> {
     fn expand(&self, normalised: &T) -> Vec<T>;
 }
 
+
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct SymmetricMove<I, S: Symmetry<I>>(pub I, pub S);
+
+impl<T, S: Symmetry<T>> SymmetricMove<T, S> {
+    pub fn index(&self) -> &T {
+        &self.0
+    }
+
+    pub fn expanded_indices(&self) -> Vec<T> {
+        self.1.expand(&self.0)
+    }
+}
+
+
 #[derive(EnumIter, EnumSetType, Debug)]
 #[enumset(repr = "u8")]
 pub enum GridSymmetryAxis {
@@ -53,12 +68,22 @@ pub struct GridSymmetry3x3 {
     axes: GridSymmetryAxes,
     canonical_index: &'static Vec<usize>,
 }
+pub type SymmetricMove3x3 = SymmetricMove<usize, GridSymmetry3x3>;
 
 impl GridSymmetry3x3 {
     pub fn new<A>(axes: A) -> Self where A: Into<GridSymmetryAxes> {
         let set = axes.into();
         let canonical_index = AXIS_TO_CANONICAL_INDICES_3X3.get(&set).expect("map contains all combinations ");
         Self { axes: set, canonical_index }
+    }
+}
+
+impl<C: Eq> From<&[C; 9]> for GridSymmetry3x3 {
+    fn from(cells: &[C; 9]) -> Self {
+        let axes = GridSymmetryAxis::iter().filter(|symmetry| {
+            symmetry.symmetric_indices_3x3().iter().all(|(f, s)| cells[*f] == cells[*s])
+        }).collect::<GridSymmetryAxes>();
+        GridSymmetry3x3::new(axes)
     }
 }
 

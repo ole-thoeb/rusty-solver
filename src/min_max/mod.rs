@@ -5,7 +5,7 @@ use std::fmt::{Debug, Display};
 use std::hash::{Hash};
 use std::ops::Not;
 
-use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
+use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Eq, PartialEq, Hash)]
 #[derive(Debug, Copy, Clone)]
@@ -23,6 +23,15 @@ pub struct ScoredMove<M> {
 impl<M> ScoredMove<M> {
     pub fn new(score: i32, min_max_move: M) -> ScoredMove<M> {
         ScoredMove { score, min_max_move }
+    }
+}
+
+impl<I, S: Symmetry<I>> ScoredMove<SymmetricMove<I, S>> {
+    pub fn expand(&self) -> Vec<ScoredMove<I>> {
+        let score = self.score;
+        self.min_max_move.expanded_indices().into_iter()
+            .map(move |i| ScoredMove::new(score, i))
+            .collect()
     }
 }
 
@@ -51,11 +60,15 @@ pub struct CacheEntry {
     flag: CacheFlag,
 }
 
-pub trait Strategy<S, M> {
+pub trait MoveSourceSink<S, M> {
     fn possible_moves(state: &S) -> Vec<M>;
+    fn do_move(state: &S, _move: &M, player: Player) -> S;
+}
+
+
+pub trait Strategy<S, M>: MoveSourceSink<S, M> {
     fn is_terminal(state: &S) -> bool;
     fn score(state: &S, player: Player) -> i32;
-    fn do_move(state: &S, min_max_move: &M, player: Player) -> S;
     fn cache(&mut self, state: &S, entry: CacheEntry);
     fn lookup(&mut self, state: &S) -> Option<CacheEntry>;
 }
@@ -116,20 +129,7 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
     max_score
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct SymmetricMove(pub usize, pub GridSymmetry3x3);
-
-impl SymmetricMove {
-    pub fn index(&self) -> usize {
-        self.0
-    }
-
-    pub fn expanded_indices(&self) -> Vec<usize> {
-        self.1.expand(&self.0)
-    }
-}
-
-pub fn to_score_board(scored_moves: &Vec<ScoredMove<SymmetricMove>>) -> [i32; 9] {
+pub fn to_score_board(scored_moves: &Vec<ScoredMove<SymmetricMove3x3>>) -> [i32; 9] {
     let mut scores = [0; 9];
     for m in scored_moves.iter() {
         for index in m.min_max_move.expanded_indices() {

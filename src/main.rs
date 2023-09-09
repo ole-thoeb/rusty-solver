@@ -1,5 +1,8 @@
 mod min_max;
 mod stoplight;
+mod ultimate_ttt;
+mod ttt;
+mod common;
 
 extern crate lazy_static;
 
