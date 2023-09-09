@@ -2,6 +2,13 @@ mod min_max;
 mod stoplight;
 
 extern crate lazy_static;
+
+use crate::min_max::{Player, score_possible_moves};
+
 fn main() {
-    println!("Hello, world!");
+    use crate::stoplight::CellState::*;
+    let board = stoplight::Board::new([EMPTY, GREEN, EMPTY, EMPTY, EMPTY, EMPTY, GREEN, EMPTY, EMPTY], Player::Min);
+
+    let scored_moves = score_possible_moves(&mut stoplight::Strategy::new(), &stoplight::Board::empty(), u8::MAX);
+    println!("{:?}", scored_moves.iter().max_by_key(|m| m.score).unwrap());
 }

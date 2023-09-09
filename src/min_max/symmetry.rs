@@ -13,6 +13,7 @@ pub trait Symmetry<T> {
 }
 
 #[derive(EnumIter, EnumSetType, Debug)]
+#[enumset(repr = "u8")]
 pub enum GridSymmetryAxis {
     Vertical,
     Horizontal,

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
+use ahash::RandomState;
 
 use rand::seq::SliceRandom;
 use strum::IntoEnumIterator;
@@ -21,7 +22,7 @@ type Cells = [CellState; 9];
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Board {
-    pub cells: Cells,
+    cells: Cells,
     last_player: Player,
 }
 
@@ -89,12 +90,12 @@ impl Board {
 
 
 pub struct Strategy {
-    cache: HashMap<Board, CacheEntry>,
+    cache: HashMap<Board, CacheEntry, RandomState>,
 }
 
 impl Strategy {
     pub fn new() -> Strategy {
-        Strategy { cache: HashMap::new() }
+        Strategy { cache: HashMap::default() }
     }
 }
 
@@ -102,18 +103,19 @@ impl crate::min_max::Strategy<Board, SymmetricMove> for Strategy {
     fn possible_moves(state: &Board) -> Vec<SymmetricMove> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
-        let mut moves = Vec::new();
-        for (index, &cell_state) in state.cells.iter().enumerate() {
+        let moves_iter = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
             if cell_state == CellState::RED {
-                continue;
+                return None;
             }
             let normalised = symmetry.canonicalize(&index);
             if covered_index[normalised] {
-                continue;
+                return None;
             }
             covered_index[normalised] = true;
-            moves.push(SymmetricMove(index, symmetry.clone()))
-        }
+            return Some(SymmetricMove(normalised, symmetry.clone()));
+        });
+        let mut moves = Vec::with_capacity(7);
+        moves.extend(moves_iter);
         moves
     }
 
@@ -312,6 +314,5 @@ mod tests {
             // all other moves have the same (lower) score
             assert!(m.score == min_score || m.min_max_move == 4)
         }
-
     }
 }
