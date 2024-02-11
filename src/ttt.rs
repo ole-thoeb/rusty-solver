@@ -1,6 +1,25 @@
-use crate::common::{Board3x3, Cell, Symmetric3x3Strategy};
-use crate::min_max::{MoveSourceSink, Player};
+use crate::common;
+use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score};
+use crate::min_max::{MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum BoardStatus {
+    MaxWon,
+    MinWon,
+    Draw,
+    Ongoing,
+}
+
+impl common::BoardStatus for BoardStatus {
+    fn is_max_won(&self) -> bool {
+        matches!(self, BoardStatus::MaxWon)
+    }
+
+    fn is_min_won(&self) -> bool {
+        matches!(self, BoardStatus::MinWon)
+    }
+}
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CellState {
@@ -24,11 +43,32 @@ impl From<Player> for CellState {
     }
 }
 
-pub type Board = Board3x3<CellState>;
-pub type Strategy = Symmetric3x3Strategy<CellState>;
+pub type GameBoard = Board3x3<CellState>;
 
-impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
-    fn possible_moves(state: &Board) -> Vec<SymmetricMove3x3> {
+impl State for GameBoard {
+    type BoardStatus = BoardStatus;
+
+    fn status(&self) -> Self::BoardStatus {
+        match self.winning_indices() {
+            Some(_indices) => match self.last_player {
+                Player::Min => BoardStatus::MinWon,
+                Player::Max => BoardStatus::MaxWon,
+            },
+            None => {
+                if self.cells.iter().any(|c| c == &CellState::EMPTY) {
+                    BoardStatus::Ongoing
+                } else {
+                    BoardStatus::Draw
+                }
+            }
+        }
+    }
+}
+
+pub type Strategy = BaseStrategy<GameBoard>;
+
+impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
+    fn possible_moves(state: &GameBoard) -> Vec<SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
         let moves_iter = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
@@ -47,7 +87,7 @@ impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
         moves
     }
 
-    fn do_move(state: &Board, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> Board {
+    fn do_move(state: &GameBoard, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> GameBoard {
         let mut new_state = state.clone();
         new_state.cells[*index] = match state.cells[*index] {
             CellState::EMPTY => CellState::from(player),
@@ -58,16 +98,46 @@ impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
     }
 }
 
+impl Scorer<GameBoard> for Strategy {
+    fn score(state: &GameBoard, player: Player) -> i32 {
+        default_score(state, player)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashSet;
     use std::time::Instant;
-    use crate::min_max::{score_possible_moves};
-    use crate::ttt::{Board, Strategy};
+    use crate::common::State;
+
+    use crate::min_max::{Player, score_possible_moves};
+    use crate::ttt::{BoardStatus, GameBoard, Strategy};
+
+    #[test]
+    fn status() {
+        use crate::ttt::CellState::*;
+        let board = GameBoard::new([EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY], Player::Max);
+        assert_eq!(board.status(), BoardStatus::Ongoing);
+
+        let board = GameBoard::new([X, X, X, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY], Player::Max);
+        assert_eq!(board.status(), BoardStatus::MaxWon);
+
+        let board = GameBoard::new([O, X, X, X, O, O, X, X, O], Player::Min);
+        assert_eq!(board.status(), BoardStatus::MinWon);
+
+        let board = GameBoard::new([O, O, O, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY, EMPTY], Player::Min);
+        assert_eq!(board.status(), BoardStatus::MinWon);
+
+        let board = GameBoard::new([X, O, O, O, X, X, EMPTY, O, O], Player::Min);
+        assert_eq!(board.status(), BoardStatus::Ongoing);
+
+        let board = GameBoard::new([X, O, O, O, X, X, X, O, O], Player::Max);
+        assert_eq!(board.status(), BoardStatus::Draw);
+    }
 
     #[test]
     fn empty_board() {
-        let board = Board::empty();
+        let board = GameBoard::empty();
         let start = Instant::now();
         let scored_moves = score_possible_moves(&mut Strategy::new(), &board, u8::MAX);
         println!("search on empty board took {}mus", start.elapsed().as_micros());

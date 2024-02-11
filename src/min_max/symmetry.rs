@@ -184,6 +184,10 @@ impl<Ctx: GridSymmetryAxisContext> GridSymmetry<Ctx> {
         let canonical_index = Ctx::canonicalization_mapping(&set);
         Self { axes: set, canonical_index, ctx: PhantomData::default() }
     }
+
+    pub fn none() -> Self {
+        Self::new(EnumSet::empty())
+    }
 }
 
 impl<Ctx: GridSymmetryAxisContext> Symmetry<usize> for GridSymmetry<Ctx> {

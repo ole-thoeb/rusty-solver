@@ -1,18 +1,32 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use ahash::{RandomState};
-use crate::min_max::{CacheEntry, MoveSourceSink, Player, Strategy};
-use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove3x3};
+use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer, Strategy};
+use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove3x3, Symmetry};
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub enum BoardStatus {
-    MaxWon,
-    MinWon,
-    Ongoing,
+pub trait BoardStatus {
+    fn is_max_won(&self) -> bool;
+    fn is_min_won(&self) -> bool;
+
+    fn is_terminal(&self) -> bool {
+        self.is_max_won() || self.is_min_won()
+    }
 }
 
-pub trait Cell: Copy + Eq {
+pub trait Cell: Copy + Eq + Hash {
     fn empty() -> Self;
+}
+
+pub trait State {
+    type BoardStatus: BoardStatus;
+    fn status(&self) -> Self::BoardStatus;
+}
+
+pub trait Board: State + Clone + Eq + Hash {
+    type Move;
+    type Symmetry: Symmetry<Self::Move>;
+    fn symmetry(&self) -> Self::Symmetry;
+    fn last_player(&self) -> Player;
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -21,23 +35,7 @@ pub struct Board3x3<C: Cell> {
     pub last_player: Player,
 }
 
-impl<C> Board3x3<C> where C: Cell {
-    pub fn symmetry(&self) -> GridSymmetry3x3 {
-        GridSymmetry3x3::from(&self.cells)
-    }
-
-    pub fn status(&self) -> BoardStatus {
-        let winning_indices = Self::WIN_INDICES.iter().find(|indices| {
-            self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]] && self.cells[indices[0]] != C::empty()
-        });
-        match winning_indices {
-            None => BoardStatus::Ongoing,
-            Some(_indices) => match self.last_player {
-                Player::Min => BoardStatus::MinWon,
-                Player::Max => BoardStatus::MaxWon,
-            }
-        }
-    }
+impl <C: Cell> Board3x3<C> {
 
     pub fn empty() -> Self {
         Self::new([C::empty(); 9], Player::Max)
@@ -45,6 +43,12 @@ impl<C> Board3x3<C> where C: Cell {
 
     pub fn new(cells: [C; 9], last_player: Player) -> Self {
         Self { cells, last_player }
+    }
+
+    pub fn winning_indices(&self) -> Option<&[usize; 3]> {
+        Self::WIN_INDICES.iter().find(|indices| {
+            self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]] && self.cells[indices[0]] != C::empty()
+        })
     }
 
     const WIN_INDICES: [[usize; 3]; 8] = [
@@ -59,44 +63,56 @@ impl<C> Board3x3<C> where C: Cell {
     ];
 }
 
-pub struct Symmetric3x3Strategy<C: Cell> {
-    cache: HashMap<Board3x3<C>, CacheEntry, RandomState>,
+impl<C> Board for Board3x3<C> where C: Cell, Self: State {
+
+    type Move = usize;
+    type Symmetry = GridSymmetry3x3;
+
+    fn symmetry(&self) -> Self::Symmetry {
+        GridSymmetry3x3::from(&self.cells)
+    }
+
+    fn last_player(&self) -> Player {
+        self.last_player
+    }
 }
 
-impl<C: Cell> Symmetric3x3Strategy<C> {
+pub struct BaseStrategy<B: Board> {
+    cache: HashMap<B, CacheEntry, RandomState>,
+}
+
+impl<B: Board> BaseStrategy<B> {
     pub fn new() -> Self {
         Self { cache: HashMap::default() }
     }
 }
 
-impl<C> Strategy<Board3x3<C>, SymmetricMove3x3> for Symmetric3x3Strategy<C> where C: Cell + Hash, Self: MoveSourceSink<Board3x3<C>, SymmetricMove3x3> {
-    fn is_terminal(state: &Board3x3<C>) -> bool {
-        state.status() != BoardStatus::Ongoing
+pub fn default_score<B: Board>(state: &B, player: Player) -> i32 {
+    if state.status().is_max_won() {
+        debug_assert_eq!(state.last_player(), Player::Max);
+        debug_assert_eq!(player, Player::Min);
+        debug_assert_ne!(state.last_player(), player);
+        -1
+    } else if state.status().is_min_won() {
+        debug_assert_eq!(state.last_player(), Player::Min);
+        debug_assert_eq!(player, Player::Max);
+        debug_assert_ne!(state.last_player(), player);
+        -1
+    }else {
+        0
+    }
+}
+
+impl<B: Board, M> Strategy<B, M> for BaseStrategy<B> where Self: MoveSourceSink<B, M> + Scorer<B> {
+    fn is_terminal(state: &B) -> bool {
+        state.status().is_terminal()
     }
 
-    fn score(state: &Board3x3<C>, player: Player) -> i32 {
-        match state.status() {
-            BoardStatus::MaxWon => {
-                debug_assert_eq!(state.last_player, Player::Max);
-                debug_assert_eq!(player, Player::Min);
-                debug_assert_ne!(state.last_player, player);
-                -1
-            }
-            BoardStatus::MinWon => {
-                debug_assert_eq!(state.last_player, Player::Min);
-                debug_assert_eq!(player, Player::Max);
-                debug_assert_ne!(state.last_player, player);
-                -1
-            }
-            BoardStatus::Ongoing => 0
-        }
-    }
-
-    fn cache(&mut self, state: &Board3x3<C>, entry: CacheEntry) {
+    fn cache(&mut self, state: &B, entry: CacheEntry) {
         self.cache.insert(state.clone(), entry);
     }
 
-    fn lookup(&mut self, state: &Board3x3<C>) -> Option<CacheEntry> {
+    fn lookup(&mut self, state: &B) -> Option<CacheEntry> {
         self.cache.get(&state).cloned()
     }
 }

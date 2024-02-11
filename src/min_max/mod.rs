@@ -65,10 +65,12 @@ pub trait MoveSourceSink<S, M> {
     fn do_move(state: &S, _move: &M, player: Player) -> S;
 }
 
-
-pub trait Strategy<S, M>: MoveSourceSink<S, M> {
-    fn is_terminal(state: &S) -> bool;
+pub trait Scorer<S> {
     fn score(state: &S, player: Player) -> i32;
+}
+
+pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> {
+    fn is_terminal(state: &S) -> bool;
     fn cache(&mut self, state: &S, entry: CacheEntry);
     fn lookup(&mut self, state: &S) -> Option<CacheEntry>;
 }

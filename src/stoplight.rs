@@ -2,18 +2,35 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use rand::seq::SliceRandom;
-use crate::common::{Board3x3, Cell, Symmetric3x3Strategy};
+use crate::common;
+use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score};
 
 use crate::min_max::*;
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
-#[derive(Eq, PartialEq)]
-#[derive(Debug, Copy, Clone, Hash)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CellState {
     EMPTY,
     GREEN,
     YELLOW,
     RED,
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum BoardStatus {
+    MaxWon,
+    MinWon,
+    Ongoing,
+}
+
+impl common::BoardStatus for BoardStatus {
+    fn is_max_won(&self) -> bool {
+        matches!(self, BoardStatus::MaxWon)
+    }
+
+    fn is_min_won(&self) -> bool {
+        matches!(self, BoardStatus::MinWon)
+    }
 }
 
 impl Cell for CellState {
@@ -22,12 +39,26 @@ impl Cell for CellState {
     }
 }
 
-pub type Board = Board3x3<CellState>;
-pub type Cells = [CellState; 9];
-pub type Strategy = Symmetric3x3Strategy<CellState>;
+pub type GameBoard = Board3x3<CellState>;
+impl State for GameBoard {
+    type BoardStatus = BoardStatus;
 
-impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
-    fn possible_moves(state: &Board) -> Vec<SymmetricMove3x3> {
+    fn status(&self) -> BoardStatus {
+        match self.winning_indices() {
+            None => BoardStatus::Ongoing,
+            Some(_indices) => match self.last_player {
+                Player::Min => BoardStatus::MinWon,
+                Player::Max => BoardStatus::MaxWon,
+            }
+        }
+    }
+}
+
+pub type Cells = [CellState; 9];
+pub type Strategy = BaseStrategy<GameBoard>;
+
+impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
+    fn possible_moves(state: &GameBoard) -> Vec<SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
         let moves_iter = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
@@ -46,7 +77,7 @@ impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
         moves
     }
 
-    fn do_move(state: &Board, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> Board {
+    fn do_move(state: &GameBoard, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> GameBoard {
         let mut new_state = state.clone();
         new_state.cells[*index] = match state.cells[*index] {
             CellState::EMPTY => CellState::GREEN,
@@ -56,6 +87,12 @@ impl MoveSourceSink<Board, SymmetricMove3x3> for Strategy {
         };
         new_state.last_player = player;
         return new_state;
+    }
+}
+
+impl Scorer<GameBoard> for Strategy {
+    fn score(state: &GameBoard, player: Player) -> i32 {
+        default_score(state, player)
     }
 }
 
@@ -79,16 +116,16 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
     use crate::min_max::{alpha_beta, Player, score_possible_moves};
-    use crate::stoplight::{Board, Cells, CellState, print_3_by_3, Strategy, to_score_board};
+    use crate::stoplight::{GameBoard, Cells, CellState, print_3_by_3, Strategy, to_score_board};
 
     fn best_move_index_of(cells: Cells) -> usize {
-        let m = alpha_beta(&mut Strategy::new(), &mut Board::new(cells, Player::Max), 30);
+        let m = alpha_beta(&mut Strategy::new(), &mut GameBoard::new(cells, Player::Max), 30);
         print_3_by_3(&to_score_board(&m));
         return *m[0].min_max_move.index();
     }
 
     fn score_board(cells: Cells) -> [i32; 9] {
-        to_score_board(&score_possible_moves(&mut Strategy::new(), &mut Board::new(cells, Player::Max), 30))
+        to_score_board(&score_possible_moves(&mut Strategy::new(), &mut GameBoard::new(cells, Player::Max), 30))
     }
 
     #[test]
@@ -190,7 +227,7 @@ mod tests {
 
     #[test]
     fn empty_board() {
-        let board = Board::empty();
+        let board = GameBoard::empty();
         let start = Instant::now();
         let scored_moves = score_possible_moves(&mut Strategy::new(), &board, u8::MAX);
         println!("search on empty board took {}ms", start.elapsed().as_millis());
