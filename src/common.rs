@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use ahash::{RandomState};
 use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer, Strategy};
-use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove3x3, Symmetry};
+use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
 
 pub trait BoardStatus {
     fn is_max_won(&self) -> bool;
@@ -24,9 +24,12 @@ pub trait State {
 
 pub trait Board: State + Clone + Eq + Hash {
     type Move;
+    fn last_player(&self) -> Player;
+}
+
+pub trait SymmetricBoard: Board {
     type Symmetry: Symmetry<Self::Move>;
     fn symmetry(&self) -> Self::Symmetry;
-    fn last_player(&self) -> Player;
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -35,8 +38,7 @@ pub struct Board3x3<C: Cell> {
     pub last_player: Player,
 }
 
-impl <C: Cell> Board3x3<C> {
-
+impl<C: Cell> Board3x3<C> {
     pub fn empty() -> Self {
         Self::new([C::empty(); 9], Player::Max)
     }
@@ -64,16 +66,18 @@ impl <C: Cell> Board3x3<C> {
 }
 
 impl<C> Board for Board3x3<C> where C: Cell, Self: State {
-
     type Move = usize;
+
+    fn last_player(&self) -> Player {
+        self.last_player
+    }
+}
+
+impl<C> SymmetricBoard for Board3x3<C> where C: Cell, Self: State {
     type Symmetry = GridSymmetry3x3;
 
     fn symmetry(&self) -> Self::Symmetry {
         GridSymmetry3x3::from(&self.cells)
-    }
-
-    fn last_player(&self) -> Player {
-        self.last_player
     }
 }
 
@@ -89,16 +93,18 @@ impl<B: Board> BaseStrategy<B> {
 
 pub fn default_score<B: Board>(state: &B, player: Player) -> i32 {
     if state.status().is_max_won() {
-        debug_assert_eq!(state.last_player(), Player::Max);
-        debug_assert_eq!(player, Player::Min);
-        debug_assert_ne!(state.last_player(), player);
-        -1
+        if player == Player::Max {
+            1
+        } else {
+            -1
+        }
     } else if state.status().is_min_won() {
-        debug_assert_eq!(state.last_player(), Player::Min);
-        debug_assert_eq!(player, Player::Max);
-        debug_assert_ne!(state.last_player(), player);
-        -1
-    }else {
+        if player == Player::Min {
+            1
+        } else {
+            -1
+        }
+    } else {
         0
     }
 }

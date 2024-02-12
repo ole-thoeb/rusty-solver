@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
-use std::mem;
+use std::{array, mem};
 use enumset::{EnumSetType, EnumSet};
 use itertools::Itertools;
 use lazy_static::lazy_static;
@@ -213,6 +213,18 @@ impl<C: Eq> From<&[C; 9]> for GridSymmetry3x3 {
     }
 }
 
+impl GridSymmetry3x3 {
+    pub fn is_same<C: Eq + Clone>(cells1: &[C; 9], cells2: &[C; 9]) -> bool {
+        if cells1 == cells2 {
+            return true;
+        }
+        // TODO: also find cases where a combination of symmetries is required
+        GridSymmetryAxis::iter().any(|axis| {
+            GridSymmetryAxisContext3x3::symmetric_indices(axis).iter().all(|(f, s)| cells1[*f] == cells2[*s])
+        })
+    }
+}
+
 pub type GridSymmetry9x9 = GridSymmetry<GridSymmetryAxisContext9x9>;
 pub type SymmetricMove9x9 = SymmetricMove<usize, GridSymmetry9x9>;
 
@@ -261,4 +273,15 @@ mod test {
 
     #[test]
     fn grid_symmetry3x3_expand() {}
+
+    #[test]
+    fn grid_symmetry3x3is_same() {
+        let cells1 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let cells2 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        assert!(GridSymmetry3x3::is_same(&cells1, &cells2));
+
+        let cells1 = [1, 1, 1, 0, 0, 0, 0, 0, 0];
+        let cells2 = [0, 0, 0, 0, 0, 0, 1, 1, 1];
+        assert!(GridSymmetry3x3::is_same(&cells1, &cells2));
+    }
 }

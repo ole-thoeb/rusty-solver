@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use rand::seq::SliceRandom;
 use crate::common;
-use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score};
+use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 
 use crate::min_max::*;
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};

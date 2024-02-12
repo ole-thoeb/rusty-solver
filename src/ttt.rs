@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score};
+use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 use crate::min_max::{MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -50,9 +50,10 @@ impl State for GameBoard {
 
     fn status(&self) -> Self::BoardStatus {
         match self.winning_indices() {
-            Some(_indices) => match self.last_player {
-                Player::Min => BoardStatus::MinWon,
-                Player::Max => BoardStatus::MaxWon,
+            Some(indices) => match self.cells[indices[0]] {
+                CellState::X => BoardStatus::MaxWon,
+                CellState::O => BoardStatus::MinWon,
+                _ => panic!(),
             },
             None => {
                 if self.cells.iter().any(|c| c == &CellState::EMPTY) {
