@@ -101,7 +101,13 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
 
 impl Scorer<GameBoard> for Strategy {
     fn score(state: &GameBoard, player: Player) -> i32 {
-        default_score(state, player)
+        default_score(state.status(), player)
+    }
+}
+
+impl Strategy {
+    pub fn score_board_state(status: BoardStatus, player: Player) -> i32 {
+        default_score(status, player)
     }
 }
 

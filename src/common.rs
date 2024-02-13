@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use ahash::{RandomState};
+use lazy_static::lazy_static;
 use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer, Strategy};
 use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
 
@@ -36,6 +37,7 @@ pub trait SymmetricBoard: Board {
 pub struct Board3x3<C: Cell> {
     pub cells: [C; 9],
     pub last_player: Player,
+    //pub last_move: Option<u8>,
 }
 
 impl<C: Cell> Board3x3<C> {
@@ -51,6 +53,13 @@ impl<C: Cell> Board3x3<C> {
         Self::WIN_INDICES.iter().find(|indices| {
             self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]] && self.cells[indices[0]] != C::empty()
         })
+        /*if let Some(last_move) = self.last_move {
+            WIN_INDICES[last_move as usize].iter().find(|indices| {
+                self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]]
+            })
+        } else {
+            None
+        }*/
     }
 
     const WIN_INDICES: [[usize; 3]; 8] = [
@@ -62,6 +71,20 @@ impl<C: Cell> Board3x3<C> {
         [2, 5, 8],
         [0, 4, 8],
         [2, 4, 6],
+    ];
+}
+
+lazy_static! {
+    static ref WIN_INDICES: [Vec<[usize; 3]>; 9] = [
+        vec![[0, 1, 2], [0, 3, 6],[0, 4, 8]],
+        vec![[0, 1, 2], [1, 4, 7]],
+        vec![[0, 1, 2], [2, 5, 8],[2, 4, 6]],
+        vec![[3, 4, 5], [0, 3, 6]],
+        vec![[3, 4, 5], [1, 4, 7],[0, 4, 8],[2, 4, 6]],
+        vec![[3, 4, 5], [2, 5, 8]],
+        vec![[6, 7, 8], [0, 3, 6],[2, 4, 6]],
+        vec![[6, 7, 8], [1, 4, 7]],
+        vec![[6, 7, 8], [2, 5, 8],[0, 4, 8]],
     ];
 }
 
@@ -91,14 +114,14 @@ impl<B: Board> BaseStrategy<B> {
     }
 }
 
-pub fn default_score<B: Board>(state: &B, player: Player) -> i32 {
-    if state.status().is_max_won() {
+pub fn default_score<S: BoardStatus>(status: S, player: Player) -> i32 {
+    if status.is_max_won() {
         if player == Player::Max {
             1
         } else {
             -1
         }
-    } else if state.status().is_min_won() {
+    } else if status.is_min_won() {
         if player == Player::Min {
             1
         } else {

@@ -2,7 +2,7 @@ use std::array;
 use itertools::Itertools;
 
 use crate::ttt;
-use crate::common::{BaseStrategy, Board, State};
+use crate::common::{BaseStrategy, Board, Cell, State};
 use crate::min_max::{MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -15,19 +15,44 @@ pub struct Move {
     ttt_move: SymmetricMove3x3,
 }
 
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+pub struct SubBoard {
+    cells: [CellState; 9],
+    status: BoardStatus,
+}
+
+impl SubBoard {
+    pub fn new(cells: [CellState; 9]) -> Self {
+        let status = ttt::GameBoard { cells, last_player: Player::Max }.status();
+        Self { cells, status }
+    }
+}
+
+impl Cell for SubBoard {
+    fn empty() -> Self {
+        Self {
+            cells: [CellState::EMPTY; 9],
+            status: BoardStatus::Ongoing,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct GameBoard {
-    pub cells: [[CellState; 9]; 9],
+    pub sub_boards: [SubBoard; 9],
     pub last_player: Player,
-    pub last_move: Option<(usize, usize)>, // (board, cell)
+    pub last_move: Option<(u8, u8)>, // (board, cell)
 }
 
 
-struct SymmetricEq([CellState; 9]);
+struct SymmetricEq(SubBoard);
 
 impl PartialEq for SymmetricEq {
     fn eq(&self, other: &Self) -> bool {
-        GridSymmetry3x3::is_same(&self.0, &other.0)
+        if self.0.status != other.0.status {
+            return false;
+        }
+        GridSymmetry3x3::is_same(&self.0.cells, &other.0.cells)
     }
 }
 
@@ -37,7 +62,7 @@ impl GameBoard {
     pub fn ttt_board(&self, index: usize) -> ttt::GameBoard {
         return ttt::GameBoard {
             last_player: self.last_player,
-            cells: self.cells[index],
+            cells: self.sub_boards[index].cells,
         };
     }
 
@@ -46,16 +71,17 @@ impl GameBoard {
     }
 
     pub fn update_ttt_board(&mut self, index: usize, ttt_board: ttt::GameBoard) {
-        self.cells[index] = ttt_board.cells;
+        let status = ttt_board.status();
+        self.sub_boards[index] = SubBoard { cells: ttt_board.cells, status };
     }
 
     pub fn symmetry(&self) -> GridSymmetry3x3 {
-        GridSymmetry3x3::from(&self.cells.map(|cells| SymmetricEq(cells)))
+        GridSymmetry3x3::from(&self.sub_boards.map(|cells| SymmetricEq(cells)))
     }
 
     pub fn empty() -> Self {
         Self {
-            cells: [[CellState::EMPTY; 9]; 9],
+            sub_boards: [SubBoard::empty(); 9],
             last_player: Player::Max,
             last_move: None,
         }
@@ -66,7 +92,7 @@ impl State for GameBoard {
     type BoardStatus = BoardStatus;
 
     fn status(&self) -> Self::BoardStatus {
-        let statuses = self.ttt_boards().map(|board| board.status());
+        let statuses = self.sub_boards.map(|board| board.status);
         let cells = statuses
             .map(|status| {
                 match status {
@@ -77,8 +103,7 @@ impl State for GameBoard {
             });
 
         let overall_ttt_board = ttt::GameBoard { cells, last_player: self.last_player };
-        let status = overall_ttt_board.status();
-        match status {
+        match overall_ttt_board.status() {
             BoardStatus::Ongoing => {
                 if statuses.iter().any(|status| status == &BoardStatus::Ongoing) {
                     BoardStatus::Ongoing
@@ -94,7 +119,7 @@ impl State for GameBoard {
                     }
                 }
             }
-            _ => status,
+            status => status,
         }
     }
 }
@@ -113,7 +138,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
     fn possible_moves(state: &GameBoard) -> Vec<Move> {
         let symmetry = state.symmetry();
         let forced_board_and_index = state.last_move.map(|(_, ttt_index)| {
-            let canonical_index = symmetry.canonicalize(&ttt_index);
+            let canonical_index = symmetry.canonicalize(&(ttt_index as usize));
             (state.ttt_board(canonical_index), canonical_index)
         });
         match forced_board_and_index {
@@ -130,11 +155,10 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
                 let moves_iter = (0..9).map(move |ttt_board_index| symmetry_filter.canonicalize(&ttt_board_index))
                     .unique()
                     .filter_map(|ttt_board_index| {
-                        let ttt_board = state.ttt_board(ttt_board_index);
-                        if ttt_board.status() != BoardStatus::Ongoing {
+                        if state.sub_boards[ttt_board_index].status != BoardStatus::Ongoing {
                             None
                         } else {
-                            Some((ttt_board_index, ttt_board))
+                            Some((ttt_board_index, state.ttt_board(ttt_board_index)))
                         }
                     }).flat_map(move |(ttt_board_index, ttt_board)| {
                     let symmetry = symmetry.clone();
@@ -155,7 +179,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
         let mut new_state = state.clone();
         new_state.update_ttt_board(*ultimate_move.ttt_board.index(), new_ttt_board);
         new_state.last_player = player;
-        new_state.last_move = Some((*ultimate_move.ttt_board.index(), *ultimate_move.ttt_move.index()));
+        new_state.last_move = Some((*ultimate_move.ttt_board.index() as u8, *ultimate_move.ttt_move.index() as u8));
         new_state
     }
 }
@@ -179,8 +203,7 @@ impl Scorer<GameBoard> for Strategy {
             }
             BoardStatus::Draw => 0,
             BoardStatus::Ongoing => {
-                let ttt_scores = state.ttt_boards().map(|ttt_board| ttt::Strategy::score(&ttt_board, player));
-                ttt_scores.iter().sum()
+                state.sub_boards.map(|board| ttt::Strategy::score_board_state(board.status, player)).iter().sum()
             }
         }
     }
@@ -197,29 +220,29 @@ mod test {
 
     #[test]
     fn test_status() {
-        let ongoing = [
+        let ongoing = SubBoard::new([
             X, O, O,
             O, X, X,
             E, O, O
-        ];
-        let draw = [
+        ]);
+        let draw = SubBoard::new([
             X, O, O,
             O, X, X,
             X, O, O
-        ];
-        let min_won = [
+        ]);
+        let min_won = SubBoard::new([
             O, X, X,
             X, O, O,
             X, O, O
-        ];
-        let max_won = [
+        ]);
+        let max_won = SubBoard::new([
             X, O, O,
             O, X, X,
             X, O, X
-        ];
+        ]);
 
         let board = GameBoard {
-            cells: [
+            sub_boards: [
                 ongoing, draw, min_won,
                 max_won, ongoing, draw,
                 min_won, max_won, ongoing,
@@ -230,7 +253,7 @@ mod test {
         assert_eq!(board.status(), BoardStatus::Ongoing);
 
         let board = GameBoard {
-            cells: [
+            sub_boards: [
                 ongoing, draw, min_won,
                 max_won, min_won, draw,
                 min_won, max_won, ongoing,
@@ -242,7 +265,7 @@ mod test {
 
         // win by points
         let board = GameBoard {
-            cells: [
+            sub_boards: [
                 max_won, draw, min_won,
                 max_won, min_won, draw,
                 min_won, max_won, draw,
@@ -253,7 +276,7 @@ mod test {
         assert_eq!(board.status(), BoardStatus::MinWon);
 
         let board = GameBoard {
-            cells: [
+            sub_boards: [
                 max_won, draw, min_won,
                 min_won, min_won, draw,
                 max_won, max_won, draw,
@@ -282,14 +305,14 @@ mod test {
 
     #[test]
     fn first_move() {
-        let empty = [
+        let empty = SubBoard::new([
             E, E, E,
             E, E, E,
             E, E, E
-        ];
+        ]);
 
         let board = GameBoard {
-            cells: [
+            sub_boards: [
                 empty, empty, empty,
                 empty, empty, empty,
                 empty, empty, empty,
@@ -299,7 +322,7 @@ mod test {
         };
 
         let start = Instant::now();
-        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, 10);
+        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, 15);
         println!("search on empty board took {}ms", start.elapsed().as_millis());
 
         let best_move = scored_moves.into_iter().max_by_key(|m| m.score).map(|m| m.min_max_move).unwrap();
