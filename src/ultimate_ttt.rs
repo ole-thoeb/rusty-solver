@@ -1,8 +1,8 @@
-use std::array;
 use itertools::Itertools;
 
 use crate::ttt;
 use crate::common::{BaseStrategy, Board, Cell, State};
+use crate::iter_util::IterUtil;
 use crate::min_max::{MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -64,10 +64,6 @@ impl GameBoard {
             last_player: self.last_player,
             cells: self.sub_boards[index].cells,
         };
-    }
-
-    pub fn ttt_boards(&self) -> [ttt::GameBoard; 9] {
-        array::from_fn(|index| self.ttt_board(index))
     }
 
     pub fn update_ttt_board(&mut self, index: usize, ttt_board: ttt::GameBoard) {
@@ -137,22 +133,22 @@ pub type Strategy = BaseStrategy<GameBoard>;
 impl MoveSourceSink<GameBoard, Move> for Strategy {
     fn possible_moves(state: &GameBoard) -> Vec<Move> {
         let symmetry = state.symmetry();
-        let forced_board_and_index = state.last_move.map(|(_, ttt_index)| {
+        let canonical_forced_board_index = state.last_move.map(|(_, ttt_index)| {
             let canonical_index = symmetry.canonicalize(&(ttt_index as usize));
-            (state.ttt_board(canonical_index), canonical_index)
+            canonical_index
         });
-        match forced_board_and_index {
-            Some((ttt_board, ttt_index)) if ttt_board.status() == BoardStatus::Ongoing => {
-                ttt::Strategy::possible_moves(&ttt_board).into_iter()
+        match canonical_forced_board_index {
+            Some(board_index) if state.sub_boards[board_index].status == BoardStatus::Ongoing => {
+                ttt::Strategy::possible_moves(&state.ttt_board(board_index)).into_iter()
                     .map(|ttt_move| Move {
-                        ttt_board: SymmetricMove(ttt_index, symmetry.clone()),
+                        ttt_board: SymmetricMove(board_index, symmetry.clone()),
                         ttt_move,
                     })
-                    .collect()
+                    .collect_vec_with_capacity(7)
             }
             _ => {
                 let symmetry_filter = symmetry.clone();
-                let moves_iter = (0..9).map(move |ttt_board_index| symmetry_filter.canonicalize(&ttt_board_index))
+                let moves_iter = (0..9).map(|ttt_board_index| symmetry_filter.canonicalize(&ttt_board_index))
                     .unique()
                     .filter(|ttt_board_index| state.sub_boards[*ttt_board_index].status == BoardStatus::Ongoing)
                     .flat_map(|ttt_board_index| {
@@ -161,7 +157,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
                         ttt::Strategy::possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
                             ttt_move,
                             ttt_board: SymmetricMove(ttt_board_index, symmetry.clone()),
-                        })
+                        }).collect_vec_with_capacity(7)
                     });
                 moves_iter.collect()
             }

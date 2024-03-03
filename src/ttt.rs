@@ -1,5 +1,5 @@
 use crate::common;
-use crate::common::{Board, Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
+use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 use crate::min_max::{MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -69,10 +69,10 @@ impl State for GameBoard {
 pub type Strategy = BaseStrategy<GameBoard>;
 
 impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
-    fn possible_moves(state: &GameBoard) -> Vec<SymmetricMove3x3> {
+    fn possible_moves(state: &GameBoard) -> impl IntoIterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
-        let moves_iter = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
+        state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
             if cell_state != CellState::EMPTY {
                 return None;
             }
@@ -82,10 +82,7 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
             }
             covered_index[normalised] = true;
             return Some(SymmetricMove(normalised, symmetry.clone()));
-        });
-        let mut moves = Vec::with_capacity(7);
-        moves.extend(moves_iter);
-        moves
+        })
     }
 
     fn do_move(state: &GameBoard, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> GameBoard {
