@@ -61,7 +61,7 @@ pub struct CacheEntry {
 }
 
 pub trait MoveSourceSink<S, M> {
-    fn possible_moves(state: &S) -> Vec<M>;
+    fn possible_moves(state: &S) -> impl IntoIterator<Item=M>;
     fn do_move(state: &S, _move: &M, player: Player) -> S;
 }
 

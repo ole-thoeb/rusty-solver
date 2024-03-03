@@ -40,6 +40,7 @@ impl Cell for CellState {
 }
 
 pub type GameBoard = Board3x3<CellState>;
+
 impl State for GameBoard {
     type BoardStatus = BoardStatus;
 
@@ -58,10 +59,10 @@ pub type Cells = [CellState; 9];
 pub type Strategy = BaseStrategy<GameBoard>;
 
 impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
-    fn possible_moves(state: &GameBoard) -> Vec<SymmetricMove3x3> {
+    fn possible_moves(state: &GameBoard) -> impl Iterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
-        let moves_iter = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
+        let moves = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
             if cell_state == CellState::RED {
                 return None;
             }
@@ -72,8 +73,6 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
             covered_index[normalised] = true;
             return Some(SymmetricMove(normalised, symmetry.clone()));
         });
-        let mut moves = Vec::with_capacity(7);
-        moves.extend(moves_iter);
         moves
     }
 

@@ -154,19 +154,15 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
                 let symmetry_filter = symmetry.clone();
                 let moves_iter = (0..9).map(move |ttt_board_index| symmetry_filter.canonicalize(&ttt_board_index))
                     .unique()
-                    .filter_map(|ttt_board_index| {
-                        if state.sub_boards[ttt_board_index].status != BoardStatus::Ongoing {
-                            None
-                        } else {
-                            Some((ttt_board_index, state.ttt_board(ttt_board_index)))
-                        }
-                    }).flat_map(move |(ttt_board_index, ttt_board)| {
-                    let symmetry = symmetry.clone();
-                    ttt::Strategy::possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
-                        ttt_move,
-                        ttt_board: SymmetricMove(ttt_board_index, symmetry.clone()),
-                    })
-                });
+                    .filter(|ttt_board_index| state.sub_boards[*ttt_board_index].status == BoardStatus::Ongoing)
+                    .flat_map(|ttt_board_index| {
+                        let ttt_board = state.ttt_board(ttt_board_index);
+                        let symmetry = symmetry.clone();
+                        ttt::Strategy::possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
+                            ttt_move,
+                            ttt_board: SymmetricMove(ttt_board_index, symmetry.clone()),
+                        })
+                    });
                 moves_iter.collect()
             }
         }
