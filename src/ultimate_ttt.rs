@@ -37,6 +37,25 @@ impl Cell for SubBoard {
     }
 }
 
+const CANONICAL_MAX_WIN_SUB_BOARD: SubBoard = SubBoard {
+    cells: [CellState::X; 9],
+    status: BoardStatus::MaxWon,
+};
+
+const CANONICAL_MIN_WIN_SUB_BOARD: SubBoard = SubBoard {
+    cells: [CellState::O; 9],
+    status: BoardStatus::MinWon,
+};
+
+const CANONICAL_DRAW_SUB_BOARD: SubBoard = SubBoard {
+    cells: [
+        CellState::X, CellState::O, CellState::X,
+        CellState::X, CellState::O, CellState::O,
+        CellState::O, CellState::X, CellState::X,
+    ],
+    status: BoardStatus::Draw,
+};
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct GameBoard {
     pub sub_boards: [SubBoard; 9],
@@ -67,8 +86,12 @@ impl GameBoard {
     }
 
     pub fn update_ttt_board(&mut self, index: usize, ttt_board: ttt::GameBoard) {
-        let status = ttt_board.status();
-        self.sub_boards[index] = SubBoard { cells: ttt_board.cells, status };
+        self.sub_boards[index] = match ttt_board.status() {
+            BoardStatus::MaxWon => CANONICAL_MAX_WIN_SUB_BOARD,
+            BoardStatus::MinWon => CANONICAL_MIN_WIN_SUB_BOARD,
+            BoardStatus::Draw => CANONICAL_DRAW_SUB_BOARD,
+            BoardStatus::Ongoing => SubBoard { cells: ttt_board.cells, status: BoardStatus::Ongoing },
+        };
     }
 
     pub fn symmetry(&self) -> GridSymmetry3x3 {
@@ -148,9 +171,19 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
             }
             _ => {
                 let symmetry_filter = symmetry.clone();
-                let moves_iter = (0..9).map(|ttt_board_index| symmetry_filter.canonicalize(&ttt_board_index))
-                    .unique()
-                    .filter(|ttt_board_index| state.sub_boards[*ttt_board_index].status == BoardStatus::Ongoing)
+                let mut covered_index = [false; 9];
+                let moves_iter = (0..9)
+                    .filter_map(|ttt_board_index| {
+                        if state.sub_boards[ttt_board_index].status != BoardStatus::Ongoing {
+                            return None;
+                        }
+                        let canonical_index = symmetry_filter.canonicalize(&ttt_board_index);
+                        if covered_index[canonical_index] {
+                            return None;
+                        }
+                        covered_index[canonical_index] = true;
+                        return Some(canonical_index);
+                    })
                     .flat_map(|ttt_board_index| {
                         let ttt_board = state.ttt_board(ttt_board_index);
                         let symmetry = symmetry.clone();

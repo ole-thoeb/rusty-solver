@@ -240,6 +240,7 @@ impl<C: Eq> From<&[C; 81]> for GridSymmetry9x9 {
 #[cfg(test)]
 mod test {
     use enumset::EnumSet;
+    use itertools::Itertools;
     use crate::min_max::symmetry::{GridSymmetry3x3, GridSymmetryAxis, Symmetry};
 
     #[test]
@@ -279,9 +280,44 @@ mod test {
         let cells1 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
         let cells2 = [0, 1, 2, 3, 4, 5, 6, 7, 8];
         assert!(GridSymmetry3x3::is_same(&cells1, &cells2));
+        
+        let all_corner_boards = [
+            [
+                1, 0, 0,
+                0, 0, 0,
+                0, 0, 0
+            ],
+            [
+                0, 0, 1,
+                0, 0, 0,
+                0, 0, 0
+            ],
+            [
+                0, 0, 0,
+                0, 0, 0,
+                0, 0, 1
+            ],
+            [
 
-        let cells1 = [1, 1, 1, 0, 0, 0, 0, 0, 0];
-        let cells2 = [0, 0, 0, 0, 0, 0, 1, 1, 1];
-        assert!(GridSymmetry3x3::is_same(&cells1, &cells2));
+                0, 0, 0,
+                0, 0, 0,
+                1, 0, 0
+            ]
+        ];
+        all_corner_boards.iter().combinations(2).for_each(|pair| {
+            assert!(GridSymmetry3x3::is_same(&pair[0], &pair[1]));
+        });
+        
+        // let cells1 = [
+        //     1, 1, 0,
+        //     0, 0, 0,
+        //     0, 0, 0
+        // ];
+        // let cells2 = [
+        //     0, 0, 0,
+        //     0, 0, 0,
+        //     0, 1, 1
+        // ];
+        // assert!(GridSymmetry3x3::is_same(&cells1, &cells2));
     }
 }
