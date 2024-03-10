@@ -1,5 +1,3 @@
-use itertools::Itertools;
-
 use crate::ttt;
 use crate::common::{BaseStrategy, Board, Cell, State};
 use crate::iter_util::IterUtil;
@@ -239,6 +237,7 @@ mod test {
     use std::iter::FromIterator;
     use std::time::Instant;
     use ahash::HashSet;
+    use itertools::Itertools;
     use crate::min_max::score_possible_moves;
     use crate::ttt::CellState::{EMPTY as E, O, X};
     use super::*;
