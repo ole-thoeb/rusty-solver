@@ -57,9 +57,9 @@ pub trait Scorer<S> {
     fn score(&mut self, state: &S, player: Player) -> i32;
 }
 
-pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {
-    fn is_terminal(state: &S) -> bool;
-}
+pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {}
+
+impl<T, S, M> Strategy<S, M> for T where T: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {}  
 
 pub fn alpha_beta<S, M: Clone, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &mut S, max_level: u8) -> Vec<ScoredMove<M>> {
     score_possible_moves(strategy, state, max_level).into_iter().max_set_by_key(|state| state.score)
@@ -75,7 +75,7 @@ pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRAT
 }
 
 fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, player: Player, remaining_levels: u8, mut alpha: i32, mut beta: i32) -> i32 {
-    if STRATEGY::is_terminal(state) || remaining_levels == 0 {
+    if remaining_levels == 0 {
         return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
     }
 
@@ -93,8 +93,14 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
         }
     }
 
+    // Check if this state is terminal i.e. no more moves can be made
+    let mut moves = strategy.possible_moves(state).into_iter().peekable();
+    if moves.peek().is_none() {
+        return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
+    }
+    
     let mut max_score = -i32::MAX;
-    for m in strategy.possible_moves(state) {
+    for m in moves {
         let next_state = strategy.do_move(state, &m, player);
         max_score = max_score.max(-alpha_beta_eval_single_move(strategy, &next_state, !player, remaining_levels - 1, -beta, -alpha));
         alpha = alpha.max(max_score);

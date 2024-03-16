@@ -141,9 +141,3 @@ impl <B: Board, CACHE: Cache<B>> Cache<B> for BaseStrategy<B, CACHE> {
         self.cache.lookup(state)
     }
 }
-
-impl<B: Board, M, CACHE: Cache<B>> Strategy<B, M> for BaseStrategy<B, CACHE> where Self: MoveSourceSink<B, M> + Scorer<B> {
-    fn is_terminal(state: &B) -> bool {
-        state.status().is_terminal()
-    }
-}

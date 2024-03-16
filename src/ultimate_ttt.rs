@@ -275,12 +275,6 @@ impl <CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE>{
     }
 }
 
-impl <CACHE: Cache<GameBoard>> crate::min_max::Strategy<GameBoard, Move> for Strategy<CACHE> {
-    fn is_terminal(state: &GameBoard) -> bool {
-        state.status().is_terminal()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::iter::FromIterator;
