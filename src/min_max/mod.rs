@@ -1,9 +1,11 @@
 pub mod symmetry;
+pub mod cache;
 
 use itertools::Itertools;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash};
 use std::ops::Not;
+pub use crate::min_max::cache::{CacheEntry, CacheFlag};
 
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -46,20 +48,6 @@ impl Not for Player {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
-pub enum CacheFlag {
-    Exact,
-    LowerBound,
-    UpperBound,
-}
-
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
-pub struct CacheEntry {
-    value: i32,
-    level: u8,
-    flag: CacheFlag,
-}
-
 pub trait MoveSourceSink<S, M> {
     fn possible_moves<'a>(&mut self, state: &'a S) -> impl 'a + IntoIterator<Item=M>;
     fn do_move(&mut self, state: &S, _move: &M, player: Player) -> S;
@@ -69,10 +57,8 @@ pub trait Scorer<S> {
     fn score(&mut self, state: &S, player: Player) -> i32;
 }
 
-pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> {
+pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {
     fn is_terminal(state: &S) -> bool;
-    fn cache(&mut self, state: &S, entry: CacheEntry);
-    fn lookup(&mut self, state: &S) -> Option<CacheEntry>;
 }
 
 pub fn alpha_beta<S, M: Clone, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &mut S, max_level: u8) -> Vec<ScoredMove<M>> {

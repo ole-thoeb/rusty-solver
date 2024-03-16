@@ -1,8 +1,8 @@
-use ahash::{HashMap, HashMapExt};
 use crate::ttt;
 use crate::common::{Board, BoardStatus as BoardStatusTrait, Cell, State};
 use crate::iter_util::IterUtil;
 use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer};
+use crate::min_max::cache::{Cache, NullCache};
 use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
 pub type BoardStatus = ttt::BoardStatus;
@@ -158,23 +158,23 @@ pub struct Stats {
     pub cache_misses: usize,
 }
 
-pub struct Strategy {
+pub struct Strategy<CACHE: Cache<GameBoard>> {
     ttt_strategy: ttt::Strategy,
-    cache: HashMap<GameBoard, CacheEntry>,
+    cache: CACHE,
     pub stats: Stats,
 }
 
-impl Strategy {
-    pub fn new() -> Self {
+impl<CACHE: Cache<GameBoard>> Strategy<CACHE> {
+    pub fn new(cache: CACHE) -> Self {
         Self {
-            ttt_strategy: ttt::Strategy::new(),
-            cache: HashMap::new(),
+            ttt_strategy: ttt::Strategy::new(NullCache::default()),
+            cache,
             stats: Stats::default(),
         }
     }
 }
 
-impl MoveSourceSink<GameBoard, Move> for Strategy {
+impl <CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE> {
     fn possible_moves(&mut self, state: &GameBoard) -> Vec<Move> {
         let symmetry = state.symmetry();
         let canonical_forced_board_index = state.last_move.map(|(_, ttt_index)| {
@@ -232,7 +232,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
     }
 }
 
-impl Scorer<GameBoard> for Strategy {
+impl <CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         self.stats.states_scored += 1;
         
@@ -259,24 +259,25 @@ impl Scorer<GameBoard> for Strategy {
     }
 }
 
-
-impl crate::min_max::Strategy<GameBoard, Move> for Strategy {
-    fn is_terminal(state: &GameBoard) -> bool {
-        state.status().is_terminal()
-    }
-
+impl <CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE>{
     fn cache(&mut self, state: &GameBoard, entry: CacheEntry) {
-        self.cache.insert(state.clone(), entry);
+        self.cache.cache(state, entry);
     }
 
     fn lookup(&mut self, state: &GameBoard) -> Option<CacheEntry> {
-        let cache_entry = self.cache.get(&state).cloned();
+        let cache_entry = self.cache.lookup(state);
         if cache_entry.is_some() {
             self.stats.cache_hits += 1;
         } else {
             self.stats.cache_misses += 1;
         }
         return cache_entry;
+    }
+}
+
+impl <CACHE: Cache<GameBoard>> crate::min_max::Strategy<GameBoard, Move> for Strategy<CACHE> {
+    fn is_terminal(state: &GameBoard) -> bool {
+        state.status().is_terminal()
     }
 }
 
@@ -363,7 +364,7 @@ mod test {
     fn first_possible_moves() {
         let board = GameBoard::empty();
 
-        let moves = Strategy::new().possible_moves(&board);
+        let moves = Strategy::new(NullCache::default()).possible_moves(&board);
         assert_eq!(moves.len(), 9);
         let groups = moves.into_iter().group_by(|m| *m.ttt_board.index());
         let moves_per_board = groups.into_iter().collect::<Vec<_>>();
@@ -394,7 +395,7 @@ mod test {
         };
 
         let start = Instant::now();
-        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, 15);
+        let scored_moves = score_possible_moves(&mut Strategy::new(NullCache::default()), &board, 15);
         println!("search on empty board took {}ms", start.elapsed().as_millis());
 
         let best_move = scored_moves.into_iter().max_by_key(|m| m.score).map(|m| m.min_max_move).unwrap();

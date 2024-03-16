@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::hash::Hash;
-use ahash::{RandomState};
 use lazy_static::lazy_static;
 use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer, Strategy};
+use crate::min_max::cache::Cache;
 use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
 
 pub trait BoardStatus {
@@ -104,13 +103,14 @@ impl<C> SymmetricBoard for Board3x3<C> where C: Cell, Self: State {
     }
 }
 
-pub struct BaseStrategy<B: Board> {
-    cache: HashMap<B, CacheEntry, RandomState>,
+pub struct BaseStrategy<B: Board, CACHE: Cache<B>> {
+    cache: CACHE,
+    phantom: std::marker::PhantomData<B>,
 }
 
-impl<B: Board> BaseStrategy<B> {
-    pub fn new() -> Self {
-        Self { cache: HashMap::default() }
+impl<B: Board, CACHE: Cache<B>> BaseStrategy<B, CACHE> {
+    pub fn new(cache: CACHE) -> Self {
+        Self { cache, phantom: Default::default() }
     }
 }
 
@@ -132,16 +132,18 @@ pub fn default_score<S: BoardStatus>(status: S, player: Player) -> i32 {
     }
 }
 
-impl<B: Board, M> Strategy<B, M> for BaseStrategy<B> where Self: MoveSourceSink<B, M> + Scorer<B> {
-    fn is_terminal(state: &B) -> bool {
-        state.status().is_terminal()
-    }
-
+impl <B: Board, CACHE: Cache<B>> Cache<B> for BaseStrategy<B, CACHE> {
     fn cache(&mut self, state: &B, entry: CacheEntry) {
-        self.cache.insert(state.clone(), entry);
+        self.cache.cache(state, entry);
     }
 
     fn lookup(&mut self, state: &B) -> Option<CacheEntry> {
-        self.cache.get(&state).cloned()
+        self.cache.lookup(state)
+    }
+}
+
+impl<B: Board, M, CACHE: Cache<B>> Strategy<B, M> for BaseStrategy<B, CACHE> where Self: MoveSourceSink<B, M> + Scorer<B> {
+    fn is_terminal(state: &B) -> bool {
+        state.status().is_terminal()
     }
 }

@@ -6,6 +6,7 @@ use crate::common;
 use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 
 use crate::min_max::*;
+use crate::min_max::cache::Cache;
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -56,9 +57,9 @@ impl State for GameBoard {
 }
 
 pub type Cells = [CellState; 9];
-pub type Strategy = BaseStrategy<GameBoard>;
+pub type Strategy<CACHE> = BaseStrategy<GameBoard, CACHE>;
 
-impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
+impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy<CACHE> {
     fn possible_moves<'a>(&mut self, state: &'a GameBoard) -> impl 'a + Iterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
@@ -89,7 +90,7 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
     }
 }
 
-impl Scorer<GameBoard> for Strategy {
+impl<CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
     }
@@ -115,16 +116,17 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
     use crate::min_max::{alpha_beta, Player, score_possible_moves};
+    use crate::min_max::cache::{HashMapCache, NullCache};
     use crate::stoplight::{GameBoard, Cells, CellState, print_3_by_3, Strategy, to_score_board};
 
     fn best_move_index_of(cells: Cells) -> usize {
-        let m = alpha_beta(&mut Strategy::new(), &mut GameBoard::new(cells, Player::Max), 30);
+        let m = alpha_beta(&mut Strategy::new(HashMapCache::default()), &mut GameBoard::new(cells, Player::Max), 30);
         print_3_by_3(&to_score_board(&m));
         return *m[0].min_max_move.index();
     }
 
     fn score_board(cells: Cells) -> [i32; 9] {
-        to_score_board(&score_possible_moves(&mut Strategy::new(), &mut GameBoard::new(cells, Player::Max), 30))
+        to_score_board(&score_possible_moves(&mut Strategy::new(HashMapCache::default()), &mut GameBoard::new(cells, Player::Max), 30))
     }
 
     #[test]
@@ -228,7 +230,7 @@ mod tests {
     fn empty_board() {
         let board = GameBoard::empty();
         let start = Instant::now();
-        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, u8::MAX);
+        let scored_moves = score_possible_moves(&mut Strategy::new(HashMapCache::default()), &board, u8::MAX);
         println!("search on empty board took {}ms", start.elapsed().as_millis());
         // center is best move
         assert_eq!(scored_moves.iter().max_by_key(|m| m.score).map(|m| *m.min_max_move.index()), Some(4));

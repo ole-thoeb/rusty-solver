@@ -1,6 +1,7 @@
 use crate::common;
 use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 use crate::min_max::{MoveSourceSink, Player, Scorer};
+use crate::min_max::cache::{Cache, NullCache};
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -66,7 +67,7 @@ impl State for GameBoard {
     }
 }
 
-pub type Strategy = BaseStrategy<GameBoard>;
+pub type Strategy = BaseStrategy<GameBoard, NullCache>;
 
 impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
     fn possible_moves<'a>(&mut self, state: &'a GameBoard) -> impl 'a + IntoIterator<Item=SymmetricMove3x3> {
@@ -100,11 +101,18 @@ impl Scorer<GameBoard> for Strategy {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
     }
+    
 }
 
 impl Strategy {
     pub fn score_board_state(status: BoardStatus, player: Player) -> i32 {
         default_score(status, player)
+    }
+}
+
+impl Default for Strategy {
+    fn default() -> Self {
+        Self::new(NullCache::default())
     }
 }
 
@@ -143,7 +151,7 @@ mod test {
     fn empty_board() {
         let board = GameBoard::empty();
         let start = Instant::now();
-        let scored_moves = score_possible_moves(&mut Strategy::new(), &board, u8::MAX);
+        let scored_moves = score_possible_moves(&mut Strategy::default(), &board, u8::MAX);
         println!("search on empty board took {}mus", start.elapsed().as_micros());
         // center is best move
         assert_eq!(scored_moves.iter().max_by_key(|m| m.score).map(|m| *m.min_max_move.index()), Some(4));
