@@ -1,7 +1,8 @@
+use ahash::{HashMap, HashMapExt};
 use crate::ttt;
-use crate::common::{BaseStrategy, Board, Cell, State};
+use crate::common::{Board, BoardStatus as BoardStatusTrait, Cell, State};
 use crate::iter_util::IterUtil;
-use crate::min_max::{MoveSourceSink, Player, Scorer};
+use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer};
 use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
 pub type BoardStatus = ttt::BoardStatus;
@@ -149,10 +150,32 @@ impl Board for GameBoard {
     }
 }
 
-pub type Strategy = BaseStrategy<GameBoard>;
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Default)]
+pub struct Stats {
+    pub states_scored: usize,
+    pub moves_explored: usize,
+    pub cache_hits: usize,
+    pub cache_misses: usize,
+}
+
+pub struct Strategy {
+    ttt_strategy: ttt::Strategy,
+    cache: HashMap<GameBoard, CacheEntry>,
+    pub stats: Stats,
+}
+
+impl Strategy {
+    pub fn new() -> Self {
+        Self {
+            ttt_strategy: ttt::Strategy::new(),
+            cache: HashMap::new(),
+            stats: Stats::default(),
+        }
+    }
+}
 
 impl MoveSourceSink<GameBoard, Move> for Strategy {
-    fn possible_moves(state: &GameBoard) -> Vec<Move> {
+    fn possible_moves(&mut self, state: &GameBoard) -> Vec<Move> {
         let symmetry = state.symmetry();
         let canonical_forced_board_index = state.last_move.map(|(_, ttt_index)| {
             let canonical_index = symmetry.canonicalize(&(ttt_index as usize));
@@ -160,7 +183,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
         });
         match canonical_forced_board_index {
             Some(board_index) if state.sub_boards[board_index].status == BoardStatus::Ongoing => {
-                ttt::Strategy::possible_moves(&state.ttt_board(board_index)).into_iter()
+                self.ttt_strategy.possible_moves(&state.ttt_board(board_index)).into_iter()
                     .map(|ttt_move| Move {
                         ttt_board: SymmetricMove(board_index, symmetry.clone()),
                         ttt_move,
@@ -185,7 +208,7 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
                     .flat_map(|ttt_board_index| {
                         let ttt_board = state.ttt_board(ttt_board_index);
                         let symmetry = symmetry.clone();
-                        ttt::Strategy::possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
+                        self.ttt_strategy.possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
                             ttt_move,
                             ttt_board: SymmetricMove(ttt_board_index, symmetry.clone()),
                         }).collect_vec_with_capacity(7)
@@ -195,9 +218,11 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
         }
     }
 
-    fn do_move(state: &GameBoard, ultimate_move: &Move, player: Player) -> GameBoard {
+    fn do_move(&mut self, state: &GameBoard, ultimate_move: &Move, player: Player) -> GameBoard {
+        self.stats.moves_explored += 1;
+        
         let ttt_board = state.ttt_board(*ultimate_move.ttt_board.index());
-        let new_ttt_board = ttt::Strategy::do_move(&ttt_board, &ultimate_move.ttt_move, player);
+        let new_ttt_board = self.ttt_strategy.do_move(&ttt_board, &ultimate_move.ttt_move, player);
 
         let mut new_state = state.clone();
         new_state.update_ttt_board(*ultimate_move.ttt_board.index(), new_ttt_board);
@@ -208,7 +233,9 @@ impl MoveSourceSink<GameBoard, Move> for Strategy {
 }
 
 impl Scorer<GameBoard> for Strategy {
-    fn score(state: &GameBoard, player: Player) -> i32 {
+    fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
+        self.stats.states_scored += 1;
+        
         match state.status() {
             BoardStatus::MaxWon => {
                 if player == Player::Max {
@@ -229,6 +256,27 @@ impl Scorer<GameBoard> for Strategy {
                 state.sub_boards.map(|board| ttt::Strategy::score_board_state(board.status, player)).iter().sum()
             }
         }
+    }
+}
+
+
+impl crate::min_max::Strategy<GameBoard, Move> for Strategy {
+    fn is_terminal(state: &GameBoard) -> bool {
+        state.status().is_terminal()
+    }
+
+    fn cache(&mut self, state: &GameBoard, entry: CacheEntry) {
+        self.cache.insert(state.clone(), entry);
+    }
+
+    fn lookup(&mut self, state: &GameBoard) -> Option<CacheEntry> {
+        let cache_entry = self.cache.get(&state).cloned();
+        if cache_entry.is_some() {
+            self.stats.cache_hits += 1;
+        } else {
+            self.stats.cache_misses += 1;
+        }
+        return cache_entry;
     }
 }
 
@@ -315,7 +363,7 @@ mod test {
     fn first_possible_moves() {
         let board = GameBoard::empty();
 
-        let moves = Strategy::possible_moves(&board);
+        let moves = Strategy::new().possible_moves(&board);
         assert_eq!(moves.len(), 9);
         let groups = moves.into_iter().group_by(|m| *m.ttt_board.index());
         let moves_per_board = groups.into_iter().collect::<Vec<_>>();

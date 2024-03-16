@@ -59,7 +59,7 @@ pub type Cells = [CellState; 9];
 pub type Strategy = BaseStrategy<GameBoard>;
 
 impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
-    fn possible_moves(state: &GameBoard) -> impl Iterator<Item=SymmetricMove3x3> {
+    fn possible_moves<'a>(&mut self, state: &'a GameBoard) -> impl 'a + Iterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
         let moves = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
@@ -76,7 +76,7 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
         moves
     }
 
-    fn do_move(state: &GameBoard, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> GameBoard {
+    fn do_move(&mut self, state: &GameBoard, SymmetricMove(index, _): &SymmetricMove3x3, player: Player) -> GameBoard {
         let mut new_state = state.clone();
         new_state.cells[*index] = match state.cells[*index] {
             CellState::EMPTY => CellState::GREEN,
@@ -90,7 +90,7 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
 }
 
 impl Scorer<GameBoard> for Strategy {
-    fn score(state: &GameBoard, player: Player) -> i32 {
+    fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
     }
 }

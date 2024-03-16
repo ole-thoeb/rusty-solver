@@ -16,6 +16,8 @@ fn main() {
     let scored_moves = score_possible_moves(&mut stoplight::Strategy::new(), &stoplight::GameBoard::empty(), u8::MAX);
     println!("{:?}", scored_moves.iter().max_by_key(|m| m.score).unwrap());*/
 
-    let scored_moves = score_possible_moves(&mut ultimate_ttt::Strategy::new(), &ultimate_ttt::GameBoard::empty(), 15);
+    let mut strategy = ultimate_ttt::Strategy::new();
+    let scored_moves = score_possible_moves(&mut strategy, &ultimate_ttt::GameBoard::empty(), 15);
     println!("{:?}", scored_moves.iter().max_by_key(|m| m.score).unwrap());
+    println!("Stats: {:?}", strategy.stats);
 }

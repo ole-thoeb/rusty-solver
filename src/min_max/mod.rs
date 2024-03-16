@@ -61,12 +61,12 @@ pub struct CacheEntry {
 }
 
 pub trait MoveSourceSink<S, M> {
-    fn possible_moves(state: &S) -> impl IntoIterator<Item=M>;
-    fn do_move(state: &S, _move: &M, player: Player) -> S;
+    fn possible_moves<'a>(&mut self, state: &'a S) -> impl 'a + IntoIterator<Item=M>;
+    fn do_move(&mut self, state: &S, _move: &M, player: Player) -> S;
 }
 
 pub trait Scorer<S> {
-    fn score(state: &S, player: Player) -> i32;
+    fn score(&mut self, state: &S, player: Player) -> i32;
 }
 
 pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> {
@@ -80,9 +80,9 @@ pub fn alpha_beta<S, M: Clone, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY
 }
 
 pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, max_level: u8) -> Vec<ScoredMove<M>> {
-    let pos_moves = STRATEGY::possible_moves(&state);
+    let pos_moves = strategy.possible_moves(&state);
     return pos_moves.into_iter().map(|m| {
-        let next_state = STRATEGY::do_move(state, &m, Player::Max);
+        let next_state = strategy.do_move(state, &m, Player::Max);
         let score = -alpha_beta_eval_single_move(strategy, &next_state, Player::Min, max_level - 1, -i32::MAX, i32::MAX);
         ScoredMove::new(score, m)
     }).collect();
@@ -90,7 +90,7 @@ pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRAT
 
 fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, player: Player, remaining_levels: u8, mut alpha: i32, mut beta: i32) -> i32 {
     if STRATEGY::is_terminal(state) || remaining_levels == 0 {
-        return STRATEGY::score(state, player) * (i32::from(remaining_levels) + 1);
+        return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
     }
 
     let alpha_original = alpha;
@@ -108,8 +108,8 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
     }
 
     let mut max_score = -i32::MAX;
-    for m in STRATEGY::possible_moves(state) {
-        let next_state = STRATEGY::do_move(state, &m, player);
+    for m in strategy.possible_moves(state) {
+        let next_state = strategy.do_move(state, &m, player);
         max_score = max_score.max(-alpha_beta_eval_single_move(strategy, &next_state, !player, remaining_levels - 1, -beta, -alpha));
         alpha = alpha.max(max_score);
         if alpha >= beta {
