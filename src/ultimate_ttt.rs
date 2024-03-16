@@ -1,3 +1,4 @@
+use std::array;
 use crate::ttt;
 use crate::common::{Board, BoardStatus as BoardStatusTrait, Cell, State};
 use crate::iter_util::IterUtil;
@@ -174,8 +175,8 @@ impl<CACHE: Cache<GameBoard>> Strategy<CACHE> {
     }
 }
 
-impl <CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE> {
-    fn possible_moves(&mut self, state: &GameBoard) -> Vec<Move> {
+impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE> {
+    fn possible_moves(state: &GameBoard) -> Box<dyn Iterator<Item=Move> + '_> {
         let symmetry = state.symmetry();
         let canonical_forced_board_index = state.last_move.map(|(_, ttt_index)| {
             let canonical_index = symmetry.canonicalize(&(ttt_index as usize));
@@ -183,18 +184,18 @@ impl <CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACH
         });
         match canonical_forced_board_index {
             Some(board_index) if state.sub_boards[board_index].status == BoardStatus::Ongoing => {
-                self.ttt_strategy.possible_moves(&state.ttt_board(board_index)).into_iter()
-                    .map(|ttt_move| Move {
+                Box::new(ttt::Strategy::possible_moves(&state.ttt_board(board_index)).into_iter()
+                    .map(move |ttt_move| Move {
                         ttt_board: SymmetricMove(board_index, symmetry.clone()),
                         ttt_move,
                     })
-                    .collect_vec_with_capacity(7)
+                )
             }
             _ => {
                 let symmetry_filter = symmetry.clone();
                 let mut covered_index = [false; 9];
                 let moves_iter = (0..9)
-                    .filter_map(|ttt_board_index| {
+                    .filter_map(move |ttt_board_index| {
                         if state.sub_boards[ttt_board_index].status != BoardStatus::Ongoing {
                             return None;
                         }
@@ -205,22 +206,22 @@ impl <CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACH
                         covered_index[canonical_index] = true;
                         return Some(canonical_index);
                     })
-                    .flat_map(|ttt_board_index| {
-                        let ttt_board = state.ttt_board(ttt_board_index);
+                    .flat_map(move |ttt_board_index| {
+                        let ttt_board = state.ttt_board(ttt_board_index).clone();
                         let symmetry = symmetry.clone();
-                        self.ttt_strategy.possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
+                        ttt::Strategy::possible_moves(&ttt_board).into_iter().map(move |ttt_move| Move {
                             ttt_move,
                             ttt_board: SymmetricMove(ttt_board_index, symmetry.clone()),
                         }).collect_vec_with_capacity(7)
                     });
-                moves_iter.collect()
+                Box::new(moves_iter)
             }
         }
     }
 
     fn do_move(&mut self, state: &GameBoard, ultimate_move: &Move, player: Player) -> GameBoard {
         self.stats.moves_explored += 1;
-        
+
         let ttt_board = state.ttt_board(*ultimate_move.ttt_board.index());
         let new_ttt_board = self.ttt_strategy.do_move(&ttt_board, &ultimate_move.ttt_move, player);
 
@@ -232,10 +233,10 @@ impl <CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACH
     }
 }
 
-impl <CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
+impl<CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         self.stats.states_scored += 1;
-        
+
         match state.status() {
             BoardStatus::MaxWon => {
                 if player == Player::Max {
@@ -259,7 +260,7 @@ impl <CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     }
 }
 
-impl <CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE>{
+impl<CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE> {
     fn cache(&mut self, state: &GameBoard, entry: CacheEntry) {
         self.cache.cache(state, entry);
     }
@@ -277,7 +278,6 @@ impl <CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE>{
 
 #[cfg(test)]
 mod test {
-    use std::iter::FromIterator;
     use std::time::Instant;
     use ahash::HashSet;
     use itertools::Itertools;
@@ -358,7 +358,7 @@ mod test {
     fn first_possible_moves() {
         let board = GameBoard::empty();
 
-        let moves = Strategy::new(NullCache::default()).possible_moves(&board);
+        let moves = Strategy::<NullCache>::possible_moves(&board).collect_vec();
         assert_eq!(moves.len(), 9);
         let groups = moves.into_iter().group_by(|m| *m.ttt_board.index());
         let moves_per_board = groups.into_iter().collect::<Vec<_>>();

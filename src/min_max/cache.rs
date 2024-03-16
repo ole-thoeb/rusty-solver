@@ -1,4 +1,4 @@
-use ahash::{HashMap, HashMapExt};
+use ahash::{HashMap};
 
 #[derive(Debug, Eq, PartialEq, Hash, Copy, Clone)]
 pub enum CacheFlag {

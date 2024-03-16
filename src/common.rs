@@ -1,6 +1,6 @@
 use std::hash::Hash;
 use lazy_static::lazy_static;
-use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer, Strategy};
+use crate::min_max::{CacheEntry, Player};
 use crate::min_max::cache::Cache;
 use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
 

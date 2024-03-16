@@ -60,7 +60,7 @@ pub type Cells = [CellState; 9];
 pub type Strategy<CACHE> = BaseStrategy<GameBoard, CACHE>;
 
 impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy<CACHE> {
-    fn possible_moves<'a>(&mut self, state: &'a GameBoard) -> impl 'a + Iterator<Item=SymmetricMove3x3> {
+    fn possible_moves(state: &GameBoard) -> impl Iterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
         let moves = state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
@@ -116,7 +116,7 @@ mod tests {
     use std::collections::HashSet;
     use std::time::Instant;
     use crate::min_max::{alpha_beta, Player, score_possible_moves};
-    use crate::min_max::cache::{HashMapCache, NullCache};
+    use crate::min_max::cache::{HashMapCache};
     use crate::stoplight::{GameBoard, Cells, CellState, print_3_by_3, Strategy, to_score_board};
 
     fn best_move_index_of(cells: Cells) -> usize {

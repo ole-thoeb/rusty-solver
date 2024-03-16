@@ -49,7 +49,7 @@ impl Not for Player {
 }
 
 pub trait MoveSourceSink<S, M> {
-    fn possible_moves<'a>(&mut self, state: &'a S) -> impl 'a + IntoIterator<Item=M>;
+    fn possible_moves(state: & S) -> impl IntoIterator<Item=M>;
     fn do_move(&mut self, state: &S, _move: &M, player: Player) -> S;
 }
 
@@ -66,7 +66,7 @@ pub fn alpha_beta<S, M: Clone, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY
 }
 
 pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, max_level: u8) -> Vec<ScoredMove<M>> {
-    let pos_moves = strategy.possible_moves(&state);
+    let pos_moves = STRATEGY::possible_moves(&state);
     return pos_moves.into_iter().map(|m| {
         let next_state = strategy.do_move(state, &m, Player::Max);
         let score = -alpha_beta_eval_single_move(strategy, &next_state, Player::Min, max_level - 1, -i32::MAX, i32::MAX);
@@ -94,7 +94,7 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
     }
 
     // Check if this state is terminal i.e. no more moves can be made
-    let mut moves = strategy.possible_moves(state).into_iter().peekable();
+    let mut moves = STRATEGY::possible_moves(state).into_iter().peekable();
     if moves.peek().is_none() {
         return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
     }

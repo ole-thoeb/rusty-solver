@@ -2,7 +2,7 @@
 name = "rusty-solver"
 version = "0.1.0"
 authors = ["ole-thoeb <43213977+ole-thoeb@users.noreply.github.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 rand = "0.8.5"

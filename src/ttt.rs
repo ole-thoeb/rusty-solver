@@ -1,7 +1,7 @@
 use crate::common;
 use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
 use crate::min_max::{MoveSourceSink, Player, Scorer};
-use crate::min_max::cache::{Cache, NullCache};
+use crate::min_max::cache::{NullCache};
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -70,10 +70,10 @@ impl State for GameBoard {
 pub type Strategy = BaseStrategy<GameBoard, NullCache>;
 
 impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
-    fn possible_moves<'a>(&mut self, state: &'a GameBoard) -> impl 'a + IntoIterator<Item=SymmetricMove3x3> {
+    fn possible_moves(state: &GameBoard) -> impl IntoIterator<Item=SymmetricMove3x3> + 'static {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
-        state.cells.iter().enumerate().filter_map(move |(index, &cell_state)| {
+        state.cells.clone().into_iter().enumerate().filter_map(move |(index, cell_state)| {
             if cell_state != CellState::EMPTY {
                 return None;
             }
@@ -101,7 +101,6 @@ impl Scorer<GameBoard> for Strategy {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
     }
-    
 }
 
 impl Strategy {
