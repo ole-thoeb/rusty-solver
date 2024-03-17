@@ -60,7 +60,9 @@ const CANONICAL_DRAW_SUB_BOARD: SubBoard = SubBoard {
 pub struct GameBoard {
     pub sub_boards: [SubBoard; 9],
     pub last_player: Player,
-    pub last_move: Option<(u8, u8)>, // (board, cell)
+    pub last_move: Option<(u8, u8)>,
+    // (board, cell)
+    status: BoardStatus,
 }
 
 
@@ -103,7 +105,40 @@ impl GameBoard {
             sub_boards: [SubBoard::empty(); 9],
             last_player: Player::Max,
             last_move: None,
+            status: BoardStatus::Ongoing,
         }
+    }
+}
+
+fn calculate_status(sub_boards: &[SubBoard; 9], last_player: Player) -> BoardStatus {
+    let statuses = sub_boards.map(|board| board.status);
+    let cells = statuses
+        .map(|status| {
+            match status {
+                BoardStatus::MaxWon => CellState::X,
+                BoardStatus::MinWon => CellState::O,
+                BoardStatus::Ongoing | BoardStatus::Draw => CellState::EMPTY,
+            }
+        });
+
+    let overall_ttt_board = ttt::GameBoard { cells, last_player };
+    match overall_ttt_board.status() {
+        BoardStatus::Ongoing => {
+            if statuses.iter().any(|status| status == &BoardStatus::Ongoing) {
+                BoardStatus::Ongoing
+            } else {
+                let min_wins = statuses.iter().filter(|&status| status == &BoardStatus::MinWon).count();
+                let max_wins = statuses.iter().filter(|&status| status == &BoardStatus::MaxWon).count();
+                if min_wins > max_wins {
+                    BoardStatus::MinWon
+                } else if max_wins > min_wins {
+                    BoardStatus::MaxWon
+                } else {
+                    BoardStatus::Draw
+                }
+            }
+        }
+        status => status,
     }
 }
 
@@ -111,35 +146,7 @@ impl State for GameBoard {
     type BoardStatus = BoardStatus;
 
     fn status(&self) -> Self::BoardStatus {
-        let statuses = self.sub_boards.map(|board| board.status);
-        let cells = statuses
-            .map(|status| {
-                match status {
-                    BoardStatus::MaxWon => CellState::X,
-                    BoardStatus::MinWon => CellState::O,
-                    BoardStatus::Ongoing | BoardStatus::Draw => CellState::EMPTY,
-                }
-            });
-
-        let overall_ttt_board = ttt::GameBoard { cells, last_player: self.last_player };
-        match overall_ttt_board.status() {
-            BoardStatus::Ongoing => {
-                if statuses.iter().any(|status| status == &BoardStatus::Ongoing) {
-                    BoardStatus::Ongoing
-                } else {
-                    let min_wins = statuses.iter().filter(|&status| status == &BoardStatus::MinWon).count();
-                    let max_wins = statuses.iter().filter(|&status| status == &BoardStatus::MaxWon).count();
-                    if min_wins > max_wins {
-                        BoardStatus::MinWon
-                    } else if max_wins > min_wins {
-                        BoardStatus::MaxWon
-                    } else {
-                        BoardStatus::Draw
-                    }
-                }
-            }
-            status => status,
-        }
+        self.status
     }
 }
 
@@ -229,6 +236,7 @@ impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE
         new_state.update_ttt_board(*ultimate_move.ttt_board.index(), new_ttt_board);
         new_state.last_player = player;
         new_state.last_move = Some((*ultimate_move.ttt_board.index() as u8, *ultimate_move.ttt_move.index() as u8));
+        new_state.status = calculate_status(&new_state.sub_boards, player);
         new_state
     }
 }
@@ -307,51 +315,31 @@ mod test {
             O, X, X,
             X, O, X
         ]);
+        
+        assert_eq!(calculate_status(&[
+            ongoing, draw, min_won,
+            max_won, ongoing, draw,
+            min_won, max_won, ongoing,
+        ], Player::Max), BoardStatus::Ongoing);
 
-        let board = GameBoard {
-            sub_boards: [
-                ongoing, draw, min_won,
-                max_won, ongoing, draw,
-                min_won, max_won, ongoing,
-            ],
-            last_player: Player::Max,
-            last_move: None,
-        };
-        assert_eq!(board.status(), BoardStatus::Ongoing);
-
-        let board = GameBoard {
-            sub_boards: [
-                ongoing, draw, min_won,
-                max_won, min_won, draw,
-                min_won, max_won, ongoing,
-            ],
-            last_player: Player::Max,
-            last_move: Some((0, 0)),
-        };
-        assert_eq!(board.status(), BoardStatus::MinWon);
+        assert_eq!(calculate_status(&[
+            ongoing, draw, min_won,
+            max_won, min_won, draw,
+            min_won, max_won, ongoing,
+        ], Player::Max), BoardStatus::MinWon);
 
         // win by points
-        let board = GameBoard {
-            sub_boards: [
-                max_won, draw, min_won,
-                max_won, min_won, draw,
-                min_won, max_won, draw,
-            ],
-            last_player: Player::Min,
-            last_move: Some((0, 0)),
-        };
-        assert_eq!(board.status(), BoardStatus::MinWon);
+        assert_eq!(calculate_status(&[
+            max_won, draw, min_won,
+            max_won, min_won, draw,
+            min_won, max_won, draw,
+        ], Player::Min), BoardStatus::MinWon);
 
-        let board = GameBoard {
-            sub_boards: [
-                max_won, draw, min_won,
-                min_won, min_won, draw,
-                max_won, max_won, draw,
-            ],
-            last_player: Player::Min,
-            last_move: Some((0, 0)),
-        };
-        assert_eq!(board.status(), BoardStatus::Draw);
+        assert_eq!(calculate_status(&[
+            max_won, draw, min_won,
+            min_won, min_won, draw,
+            max_won, max_won, draw,
+        ], Player::Min), BoardStatus::Draw);
     }
 
     #[test]
@@ -386,6 +374,7 @@ mod test {
             ],
             last_player: Player::Max,
             last_move: None,
+            status: BoardStatus::Ongoing,
         };
 
         let start = Instant::now();

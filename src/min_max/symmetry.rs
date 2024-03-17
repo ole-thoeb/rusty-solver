@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::mem;
+use ahash::{HashMap, HashSet, HashSetExt};
 use enumset::{EnumSetType, EnumSet};
 use itertools::Itertools;
 use lazy_static::lazy_static;

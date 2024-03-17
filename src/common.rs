@@ -50,7 +50,7 @@ impl<C: Cell> Board3x3<C> {
 
     pub fn winning_indices(&self) -> Option<&[usize; 3]> {
         Self::WIN_INDICES.iter().find(|indices| {
-            self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]] && self.cells[indices[0]] != C::empty()
+            self.cells[indices[0]] != C::empty() && self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]]
         })
         /*if let Some(last_move) = self.last_move {
             WIN_INDICES[last_move as usize].iter().find(|indices| {

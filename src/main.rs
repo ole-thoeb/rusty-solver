@@ -19,7 +19,7 @@ fn main() {
 
     let mut strategy = ultimate_ttt::Strategy::new(NullCache::default());
     let now = std::time::Instant::now();
-    let scored_moves = score_possible_moves(&mut strategy, &ultimate_ttt::GameBoard::empty(), 15);
+    let scored_moves = score_possible_moves(&mut strategy, &ultimate_ttt::GameBoard::empty(), 16);
     let time = now.elapsed().as_millis();
     println!("{:?}", scored_moves.iter().max_by_key(|m| m.score).unwrap());
     println!("Time: {}ms", time);
