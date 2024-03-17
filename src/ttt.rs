@@ -73,8 +73,9 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
     fn possible_moves(state: &GameBoard) -> impl IntoIterator<Item=SymmetricMove3x3> + 'static {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
-        state.cells.clone().into_iter().enumerate().filter_map(move |(index, cell_state)| {
-            if cell_state != CellState::EMPTY {
+        let cells = state.cells;
+        [4, 0, 1, 2, 3, 5, 6, 7, 8].into_iter().filter_map(move |index| {
+            if cells[index] != CellState::EMPTY {
                 return None;
             }
             let normalised = symmetry.canonicalize(&index);
@@ -152,19 +153,13 @@ mod test {
         let start = Instant::now();
         let scored_moves = score_possible_moves(&mut Strategy::default(), &board, u8::MAX);
         println!("search on empty board took {}mus", start.elapsed().as_micros());
-        // center is best move
-        assert_eq!(scored_moves.iter().max_by_key(|m| m.score).map(|m| *m.min_max_move.index()), Some(4));
 
         let scored_expanded_moves = scored_moves.iter()
             .flat_map(|m| m.expand())
             .collect::<HashSet<_>>();
-
-        assert_eq!(scored_expanded_moves.len(), 9);
-
-        let min_score = scored_expanded_moves.iter().map(|m| m.score).min().unwrap();
-        for m in scored_expanded_moves {
-            // all other moves have the same (lower) score
-            assert!(m.score == min_score || m.min_max_move == 4)
-        }
+        
+        // Normal tick-tack-toe always results in a draw if both players play optimally. Therefore, the score of all moves should be 0.
+        let scores: Vec<i32> = scored_expanded_moves.iter().map(|scored_move| scored_move.score).collect();
+        assert_eq!(scores, vec![0; 9]);
     }
 }
