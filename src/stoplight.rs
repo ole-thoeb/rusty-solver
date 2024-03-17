@@ -2,12 +2,13 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use rand::seq::SliceRandom;
-use crate::common;
-use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
+use crate::{common, min_max};
+use crate::common::{Board3x3, Cell, BaseStrategy, default_score, Board};
 
 use crate::min_max::*;
 use crate::min_max::cache::Cache;
-use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
+use crate::min_max::stats::NullStats;
+use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CellState {
@@ -42,8 +43,13 @@ impl Cell for CellState {
 
 pub type GameBoard = Board3x3<CellState>;
 
-impl State for GameBoard {
+impl Board for GameBoard {
+    type Move = SymmetricMove<usize, GridSymmetry3x3>;
     type BoardStatus = BoardStatus;
+
+    fn last_player(&self) -> Player {
+        self.last_player
+    }
 
     fn status(&self) -> BoardStatus {
         match self.winning_indices() {
@@ -59,7 +65,12 @@ impl State for GameBoard {
 pub type Cells = [CellState; 9];
 pub type Strategy<CACHE> = BaseStrategy<GameBoard, CACHE>;
 
-impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy<CACHE> {
+impl <CACHE: Cache<GameBoard>> min_max::Strategy for Strategy<CACHE> {
+    type State = GameBoard;
+    type Move = SymmetricMove3x3;
+    type Cache = CACHE;
+    type Stats = NullStats;
+
     fn possible_moves(state: &GameBoard) -> impl Iterator<Item=SymmetricMove3x3> {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
@@ -88,11 +99,17 @@ impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, SymmetricMove3x3> for St
         new_state.last_player = player;
         return new_state;
     }
-}
 
-impl<CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
+    }
+    
+    fn cache(&mut self) -> &mut Self::Cache {
+        self.cache()
+    }
+
+    fn stats(&mut self) -> &mut Self::Stats {
+        self.stats()
     }
 }
 

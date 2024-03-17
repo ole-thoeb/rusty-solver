@@ -1,38 +1,27 @@
 use std::hash::Hash;
 use lazy_static::lazy_static;
-use crate::min_max::{CacheEntry, Player};
+use crate::min_max::{Player};
 use crate::min_max::cache::Cache;
-use crate::min_max::symmetry::{GridSymmetry3x3, Symmetry};
+use crate::min_max::stats::NullStats;
+use crate::min_max::symmetry::{GridSymmetry3x3};
 
 pub trait BoardStatus {
     fn is_max_won(&self) -> bool;
     fn is_min_won(&self) -> bool;
-
-    fn is_terminal(&self) -> bool {
-        self.is_max_won() || self.is_min_won()
-    }
 }
 
 pub trait Cell: Copy + Eq + Hash {
     fn empty() -> Self;
 }
 
-pub trait State {
+pub trait Board: Clone + Eq + Hash {
+    type Move;
     type BoardStatus: BoardStatus;
+    fn last_player(&self) -> Player;
     fn status(&self) -> Self::BoardStatus;
 }
 
-pub trait Board: State + Clone + Eq + Hash {
-    type Move;
-    fn last_player(&self) -> Player;
-}
-
-pub trait SymmetricBoard: Board {
-    type Symmetry: Symmetry<Self::Move>;
-    fn symmetry(&self) -> Self::Symmetry;
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Board3x3<C: Cell> {
     pub cells: [C; 9],
     pub last_player: Player,
@@ -47,18 +36,15 @@ impl<C: Cell> Board3x3<C> {
     pub fn new(cells: [C; 9], last_player: Player) -> Self {
         Self { cells, last_player }
     }
+    
+    pub fn symmetry(&self) -> GridSymmetry3x3 {
+        GridSymmetry3x3::from(&self.cells)
+    }
 
     pub fn winning_indices(&self) -> Option<&[usize; 3]> {
         Self::WIN_INDICES.iter().find(|indices| {
             self.cells[indices[0]] != C::empty() && self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]]
         })
-        /*if let Some(last_move) = self.last_move {
-            WIN_INDICES[last_move as usize].iter().find(|indices| {
-                self.cells[indices[0]] == self.cells[indices[1]] && self.cells[indices[1]] == self.cells[indices[2]]
-            })
-        } else {
-            None
-        }*/
     }
 
     const WIN_INDICES: [[usize; 3]; 8] = [
@@ -87,30 +73,23 @@ lazy_static! {
     ];
 }
 
-impl<C> Board for Board3x3<C> where C: Cell, Self: State {
-    type Move = usize;
-
-    fn last_player(&self) -> Player {
-        self.last_player
-    }
-}
-
-impl<C> SymmetricBoard for Board3x3<C> where C: Cell, Self: State {
-    type Symmetry = GridSymmetry3x3;
-
-    fn symmetry(&self) -> Self::Symmetry {
-        GridSymmetry3x3::from(&self.cells)
-    }
-}
-
 pub struct BaseStrategy<B: Board, CACHE: Cache<B>> {
     cache: CACHE,
+    stats: NullStats,
     phantom: std::marker::PhantomData<B>,
 }
 
 impl<B: Board, CACHE: Cache<B>> BaseStrategy<B, CACHE> {
     pub fn new(cache: CACHE) -> Self {
-        Self { cache, phantom: Default::default() }
+        Self { cache, phantom: Default::default(), stats: NullStats::default() }
+    }
+    
+    pub fn cache(&mut self) -> &mut CACHE {
+        &mut self.cache
+    }
+    
+    pub fn stats(&mut self) -> &mut NullStats {
+        &mut self.stats
     }
 }
 
@@ -129,15 +108,5 @@ pub fn default_score<S: BoardStatus>(status: S, player: Player) -> i32 {
         }
     } else {
         0
-    }
-}
-
-impl <B: Board, CACHE: Cache<B>> Cache<B> for BaseStrategy<B, CACHE> {
-    fn cache(&mut self, state: &B, entry: CacheEntry) {
-        self.cache.cache(state, entry);
-    }
-
-    fn lookup(&mut self, state: &B) -> Option<CacheEntry> {
-        self.cache.lookup(state)
     }
 }

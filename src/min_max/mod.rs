@@ -1,11 +1,14 @@
 pub mod symmetry;
 pub mod cache;
+pub mod stats;
 
 use itertools::Itertools;
 use std::fmt::{Debug, Display};
 use std::hash::{Hash};
 use std::ops::Not;
 pub use crate::min_max::cache::{CacheEntry, CacheFlag};
+use crate::min_max::cache::Cache;
+use crate::min_max::stats::Stats;
 
 use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
 
@@ -48,24 +51,26 @@ impl Not for Player {
     }
 }
 
-pub trait MoveSourceSink<S, M> {
-    fn possible_moves(state: & S) -> impl IntoIterator<Item=M>;
-    fn do_move(&mut self, state: &S, _move: &M, player: Player) -> S;
+pub trait Strategy {
+    type State;
+    type Move;
+    type Cache: Cache<Self::State>;
+    type Stats: Stats;
+
+    fn possible_moves(state: &Self::State) -> impl IntoIterator<Item=Self::Move>;
+    fn do_move(&mut self, state: &Self::State, _move: &Self::Move, player: Player) -> Self::State;
+    
+    fn score(&mut self, state: &Self::State, player: Player) -> i32;
+
+    fn cache(&mut self) -> &mut Self::Cache;
+    fn stats(&mut self) -> &mut Self::Stats;
 }
 
-pub trait Scorer<S> {
-    fn score(&mut self, state: &S, player: Player) -> i32;
-}
-
-pub trait Strategy<S, M>: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {}
-
-impl<T, S, M> Strategy<S, M> for T where T: MoveSourceSink<S, M> + Scorer<S> + cache::Cache<S> {}  
-
-pub fn alpha_beta<S, M: Clone, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &mut S, max_level: u8) -> Vec<ScoredMove<M>> {
+pub fn alpha_beta<STRATEGY: Strategy>(strategy: &mut STRATEGY, state: &mut STRATEGY::State, max_level: u8) -> Vec<ScoredMove<STRATEGY::Move>> {
     score_possible_moves(strategy, state, max_level).into_iter().max_set_by_key(|state| state.score)
 }
 
-pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, max_level: u8) -> Vec<ScoredMove<M>> {
+pub fn score_possible_moves<STRATEGY: Strategy>(strategy: &mut STRATEGY, state: &STRATEGY::State, max_level: u8) -> Vec<ScoredMove<STRATEGY::Move>> {
     let pos_moves = STRATEGY::possible_moves(&state);
     return pos_moves.into_iter().map(|m| {
         let next_state = strategy.do_move(state, &m, Player::Max);
@@ -74,13 +79,13 @@ pub fn score_possible_moves<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRAT
     }).collect();
 }
 
-fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut STRATEGY, state: &S, player: Player, remaining_levels: u8, mut alpha: i32, mut beta: i32) -> i32 {
+fn alpha_beta_eval_single_move<STRATEGY: Strategy>(strategy: &mut STRATEGY, state: &STRATEGY::State, player: Player, remaining_levels: u8, mut alpha: i32, mut beta: i32) -> i32 {
     if remaining_levels == 0 {
         return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
     }
 
     let alpha_original = alpha;
-    if let Some(entry) = strategy.lookup(state) {
+    if let Some(entry) = strategy.cache().get(state) {
         if entry.level >= remaining_levels {
             match entry.flag {
                 CacheFlag::Exact => return entry.value,
@@ -98,7 +103,7 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
     if moves.peek().is_none() {
         return strategy.score(state, player) * (i32::from(remaining_levels) + 1);
     }
-    
+
     let mut max_score = -i32::MAX;
     for m in moves {
         let next_state = strategy.do_move(state, &m, player);
@@ -115,7 +120,7 @@ fn alpha_beta_eval_single_move<S, M, STRATEGY: Strategy<S, M>>(strategy: &mut ST
     } else {
         CacheFlag::Exact
     };
-    strategy.cache(state, CacheEntry {
+    strategy.cache().set(state, CacheEntry {
         level: remaining_levels,
         flag,
         value: max_score,

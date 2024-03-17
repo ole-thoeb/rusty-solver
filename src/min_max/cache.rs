@@ -15,8 +15,8 @@ pub struct CacheEntry {
 }
 
 pub trait Cache<S> {
-    fn cache(&mut self, state: &S, entry: CacheEntry);
-    fn lookup(&mut self, state: &S) -> Option<CacheEntry>;
+    fn set(&mut self, state: &S, entry: CacheEntry);
+    fn get(&mut self, state: &S) -> Option<CacheEntry>;
 }
 
 #[derive(Debug, Clone)]
@@ -35,11 +35,11 @@ impl <S> Default for HashMapCache<S> {
 }
 
 impl<S> Cache<S> for HashMapCache<S> where S: Eq + std::hash::Hash + Clone {
-    fn cache(&mut self, state: &S, entry: CacheEntry) {
+    fn set(&mut self, state: &S, entry: CacheEntry) {
         self.0.insert(state.clone(), entry);
     }
 
-    fn lookup(&mut self, state: &S) -> Option<CacheEntry> {
+    fn get(&mut self, state: &S) -> Option<CacheEntry> {
         self.0.get(state).cloned()
     }
 }
@@ -48,9 +48,9 @@ impl<S> Cache<S> for HashMapCache<S> where S: Eq + std::hash::Hash + Clone {
 pub struct NullCache;
 
 impl<S> Cache<S> for NullCache {
-    fn cache(&mut self, _state: &S, _entry: CacheEntry) {}
+    fn set(&mut self, _state: &S, _entry: CacheEntry) {}
 
-    fn lookup(&mut self, _state: &S) -> Option<CacheEntry> {
+    fn get(&mut self, _state: &S) -> Option<CacheEntry> {
         None
     }
 }

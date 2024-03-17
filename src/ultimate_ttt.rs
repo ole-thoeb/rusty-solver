@@ -1,9 +1,9 @@
-use std::array;
-use crate::ttt;
-use crate::common::{Board, BoardStatus as BoardStatusTrait, Cell, State};
+use crate::{min_max, ttt};
+use crate::common::{Board, Cell};
 use crate::iter_util::IterUtil;
-use crate::min_max::{CacheEntry, MoveSourceSink, Player, Scorer};
+use crate::min_max::{Player};
 use crate::min_max::cache::{Cache, NullCache};
+use crate::min_max::stats::SimpleStats;
 use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
 pub type BoardStatus = ttt::BoardStatus;
@@ -23,7 +23,7 @@ pub struct SubBoard {
 
 impl SubBoard {
     pub fn new(cells: [CellState; 9]) -> Self {
-        let status = ttt::GameBoard { cells, last_player: Player::Max }.status();
+        let status = ttt::GameBoard::new(cells, Player::Max).status();
         Self { cells, status }
     }
 }
@@ -81,10 +81,7 @@ impl Eq for SymmetricEq {}
 
 impl GameBoard {
     pub fn ttt_board(&self, index: usize) -> ttt::GameBoard {
-        return ttt::GameBoard {
-            last_player: self.last_player,
-            cells: self.sub_boards[index].cells,
-        };
+        return ttt::GameBoard::new(self.sub_boards[index].cells, self.last_player);
     }
 
     pub fn update_ttt_board(&mut self, index: usize, ttt_board: ttt::GameBoard) {
@@ -121,7 +118,7 @@ fn calculate_status(sub_boards: &[SubBoard; 9], last_player: Player) -> BoardSta
             }
         });
 
-    let overall_ttt_board = ttt::GameBoard { cells, last_player };
+    let overall_ttt_board = ttt::GameBoard::new(cells, last_player);
     match overall_ttt_board.status() {
         BoardStatus::Ongoing => {
             if statuses.iter().any(|status| status == &BoardStatus::Ongoing) {
@@ -142,34 +139,23 @@ fn calculate_status(sub_boards: &[SubBoard; 9], last_player: Player) -> BoardSta
     }
 }
 
-impl State for GameBoard {
+impl Board for GameBoard {
+    type Move = usize;
     type BoardStatus = BoardStatus;
+
+    fn last_player(&self) -> Player {
+        self.last_player
+    }
 
     fn status(&self) -> Self::BoardStatus {
         self.status
     }
 }
 
-impl Board for GameBoard {
-    type Move = usize;
-
-    fn last_player(&self) -> Player {
-        self.last_player
-    }
-}
-
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Default)]
-pub struct Stats {
-    pub states_scored: usize,
-    pub moves_explored: usize,
-    pub cache_hits: usize,
-    pub cache_misses: usize,
-}
-
 pub struct Strategy<CACHE: Cache<GameBoard>> {
     ttt_strategy: ttt::Strategy,
     cache: CACHE,
-    pub stats: Stats,
+    pub stats: SimpleStats,
 }
 
 impl<CACHE: Cache<GameBoard>> Strategy<CACHE> {
@@ -177,12 +163,17 @@ impl<CACHE: Cache<GameBoard>> Strategy<CACHE> {
         Self {
             ttt_strategy: ttt::Strategy::new(NullCache::default()),
             cache,
-            stats: Stats::default(),
+            stats: SimpleStats::default(),
         }
     }
 }
 
-impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE> {
+impl<CACHE: Cache<GameBoard>> min_max::Strategy for Strategy<CACHE> {
+    type State = GameBoard;
+    type Move = Move;
+    type Cache = CACHE;
+    type Stats = SimpleStats;
+    
     fn possible_moves(state: &GameBoard) -> Box<dyn Iterator<Item=Move> + '_> {
         let symmetry = state.symmetry();
         let canonical_forced_board_index = state.last_move.map(|(_, ttt_index)| {
@@ -227,8 +218,6 @@ impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE
     }
 
     fn do_move(&mut self, state: &GameBoard, ultimate_move: &Move, player: Player) -> GameBoard {
-        self.stats.moves_explored += 1;
-
         let ttt_board = state.ttt_board(*ultimate_move.ttt_board.index());
         let new_ttt_board = self.ttt_strategy.do_move(&ttt_board, &ultimate_move.ttt_move, player);
 
@@ -239,12 +228,8 @@ impl<CACHE: Cache<GameBoard>> MoveSourceSink<GameBoard, Move> for Strategy<CACHE
         new_state.status = calculate_status(&new_state.sub_boards, player);
         new_state
     }
-}
 
-impl<CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
-        self.stats.states_scored += 1;
-
         match state.status() {
             BoardStatus::MaxWon => {
                 if player == Player::Max {
@@ -266,21 +251,14 @@ impl<CACHE: Cache<GameBoard>> Scorer<GameBoard> for Strategy<CACHE> {
             }
         }
     }
-}
 
-impl<CACHE: Cache<GameBoard>> Cache<GameBoard> for Strategy<CACHE> {
-    fn cache(&mut self, state: &GameBoard, entry: CacheEntry) {
-        self.cache.cache(state, entry);
+
+    fn cache(&mut self) -> &mut Self::Cache {
+        &mut self.cache
     }
 
-    fn lookup(&mut self, state: &GameBoard) -> Option<CacheEntry> {
-        let cache_entry = self.cache.lookup(state);
-        if cache_entry.is_some() {
-            self.stats.cache_hits += 1;
-        } else {
-            self.stats.cache_misses += 1;
-        }
-        return cache_entry;
+    fn stats(&mut self) -> &mut Self::Stats {
+        &mut self.stats
     }
 }
 
@@ -289,7 +267,7 @@ mod test {
     use std::time::Instant;
     use ahash::HashSet;
     use itertools::Itertools;
-    use crate::min_max::score_possible_moves;
+    use crate::min_max::{score_possible_moves, Strategy as _};
     use crate::ttt::CellState::{EMPTY as E, O, X};
     use super::*;
 

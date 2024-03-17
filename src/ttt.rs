@@ -1,8 +1,9 @@
-use crate::common;
-use crate::common::{Board3x3, Cell, State, BaseStrategy, default_score, SymmetricBoard};
-use crate::min_max::{MoveSourceSink, Player, Scorer};
+use crate::{common, min_max};
+use crate::common::{Board3x3, Cell, BaseStrategy, default_score, Board};
+use crate::min_max::{Player};
 use crate::min_max::cache::{NullCache};
-use crate::min_max::symmetry::{SymmetricMove, SymmetricMove3x3, Symmetry};
+use crate::min_max::stats::NullStats;
+use crate::min_max::symmetry::{GridSymmetry3x3, SymmetricMove, SymmetricMove3x3, Symmetry};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum BoardStatus {
@@ -46,8 +47,13 @@ impl From<Player> for CellState {
 
 pub type GameBoard = Board3x3<CellState>;
 
-impl State for GameBoard {
+impl Board for GameBoard {
+    type Move = SymmetricMove<usize, GridSymmetry3x3>;
     type BoardStatus = BoardStatus;
+
+    fn last_player(&self) -> Player {
+        self.last_player
+    }
 
     fn status(&self) -> Self::BoardStatus {
         match self.winning_indices() {
@@ -69,7 +75,24 @@ impl State for GameBoard {
 
 pub type Strategy = BaseStrategy<GameBoard, NullCache>;
 
-impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
+impl Strategy {
+    pub fn score_board_state(status: BoardStatus, player: Player) -> i32 {
+        default_score(status, player)
+    }
+}
+
+impl Default for Strategy {
+    fn default() -> Self {
+        Self::new(NullCache::default())
+    }
+}
+
+impl min_max::Strategy for Strategy {
+    type State = GameBoard;
+    type Move = SymmetricMove3x3;
+    type Cache = NullCache;
+    type Stats = NullStats;
+
     fn possible_moves(state: &GameBoard) -> impl IntoIterator<Item=SymmetricMove3x3> + 'static {
         let symmetry = state.symmetry();
         let mut covered_index = [false; 9];
@@ -96,23 +119,17 @@ impl MoveSourceSink<GameBoard, SymmetricMove3x3> for Strategy {
         new_state.last_player = player;
         return new_state;
     }
-}
 
-impl Scorer<GameBoard> for Strategy {
     fn score(&mut self, state: &GameBoard, player: Player) -> i32 {
         default_score(state.status(), player)
     }
-}
 
-impl Strategy {
-    pub fn score_board_state(status: BoardStatus, player: Player) -> i32 {
-        default_score(status, player)
+    fn cache(&mut self) -> &mut Self::Cache {
+        self.cache()
     }
-}
 
-impl Default for Strategy {
-    fn default() -> Self {
-        Self::new(NullCache::default())
+    fn stats(&mut self) -> &mut Self::Stats {
+        self.stats()
     }
 }
 
@@ -120,7 +137,7 @@ impl Default for Strategy {
 mod test {
     use std::collections::HashSet;
     use std::time::Instant;
-    use crate::common::State;
+    use crate::common::Board;
 
     use crate::min_max::{Player, score_possible_moves};
     use crate::ttt::{BoardStatus, GameBoard, Strategy};
