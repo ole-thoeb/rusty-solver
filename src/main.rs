@@ -4,6 +4,8 @@ mod ultimate_ttt;
 mod ttt;
 mod common;
 mod iter_util;
+mod expecti_min_max;
+mod knucklebones;
 
 extern crate lazy_static;
 
