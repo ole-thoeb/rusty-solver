@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::hash::Hash;
-
+use rand::prelude::IndexedRandom;
 use rand::seq::SliceRandom;
 use crate::{common, min_max};
 use crate::common::{Board3x3, Cell, BaseStrategy, default_score, Board};
@@ -115,7 +115,7 @@ impl <CACHE: Cache<GameBoard>> min_max::Strategy for Strategy<CACHE> {
 
 pub fn choose_random_move(moves: Vec<ScoredMove<SymmetricMove3x3>>) -> ScoredMove<usize> {
     all_move_indices(moves)
-        .choose(&mut rand::thread_rng())
+        .choose(&mut rand::rng())
         .unwrap()
         .clone()
 }

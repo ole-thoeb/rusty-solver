@@ -1,8 +1,13 @@
-use crate::expecti_min_max;
-use crate::expecti_min_max::Moves;
+use crate::expecti_min_max::{alpha_beta_star, Moves, Strategy as StrategyTrait};
+use crate::game_controller::{GameController, Status};
 use crate::min_max::cache::NullCache;
 use crate::min_max::stats::NullStats;
 use crate::min_max::Player;
+use crate::{expecti_min_max, game_controller};
+use rand::distr::StandardUniform;
+use rand::prelude::*;
+use std::fmt::{write, Display, Formatter, Write};
+use std::str::FromStr;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum DiceRoll {
@@ -27,6 +32,33 @@ impl DiceRoll {
     }
 }
 
+impl Display for DiceRoll {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DiceRoll::One => f.write_str("1"),
+            DiceRoll::Two => f.write_str("2"),
+            DiceRoll::Three => f.write_str("3"),
+            DiceRoll::Four => f.write_str("4"),
+            DiceRoll::Five => f.write_str("5"),
+            DiceRoll::Six => f.write_str("6"),
+        }
+    }
+}
+
+impl Distribution<DiceRoll> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> DiceRoll {
+        match rng.random_range(1..=6) {
+            1 => DiceRoll::One,
+            2 => DiceRoll::Two,
+            3 => DiceRoll::Three,
+            4 => DiceRoll::Four,
+            5 => DiceRoll::Five,
+            6 => DiceRoll::Six,
+            _ => unreachable!(),
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Cell {
     Empty,
@@ -38,6 +70,15 @@ impl Cell {
         match self {
             Cell::Empty => 0,
             Cell::Dice(d) => d.as_i32(),
+        }
+    }
+}
+
+impl Display for Cell {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Cell::Empty => write!(f, " "),
+            Cell::Dice(d) => write!(f, "{}", d),
         }
     }
 }
@@ -222,7 +263,7 @@ impl expecti_min_max::Strategy for Strategy {
                 None => panic!(),
                 Some(roll) => State {
                     dice_roll: None,
-                    max_side: state.min_side.update(*row_index, |row| match player {
+                    max_side: state.max_side.update(*row_index, |row| match player {
                         Player::Min => row.remove(roll),
                         Player::Max => row.add(roll),
                     }),
@@ -258,11 +299,141 @@ impl expecti_min_max::Strategy for Strategy {
     }
 }
 
+pub struct Knucklebones {
+    rng: SmallRng,
+    strategy: Strategy,
+}
+
+impl Knucklebones {
+    pub fn new_random() -> Self {
+        Self {
+            rng: rand::make_rng(),
+            strategy: Strategy::new(),
+        }
+    }
+
+    fn roll(&mut self) -> Move {
+        Move::Roll(self.rng.sample(StandardUniform))
+    }
+}
+
+impl GameController for Knucklebones {
+    type State = State;
+    type Move = Move;
+
+    fn initial(&mut self) -> Self::State {
+        let state = State::empty();
+        let roll = self.roll();
+        self.strategy.do_move(&state, &roll, Player::Min)
+    }
+
+    fn do_move(&mut self, state: &Self::State, m: Self::Move) -> Result<Self::State, String> {
+        let state = self.strategy.do_move(state, &m, Player::Min);
+        let roll = self.roll();
+        Ok(self.strategy.do_move(&state, &roll, Player::Max))
+    }
+
+    fn do_computer_move(&mut self, state: &Self::State) -> (Self::State, Self::Move) {
+        let moves = alpha_beta_star(&mut self.strategy, state, 15);
+        let _move = moves.choose(&mut self.rng).unwrap().min_max_move;
+        let state = self.strategy.do_move(&state, &_move, Player::Max);
+        let roll = self.roll();
+        (self.strategy.do_move(&state, &roll, Player::Min), _move)
+    }
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Move::Roll(r) => {
+                write!(f, "Rolled {}", r)
+            }
+            Move::Place(r) => {
+                write!(f, "Placed at row {}", r + 1)
+            }
+        }
+    }
+}
+
+impl FromStr for Move {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "1" => Ok(Move::Place(0)),
+            "2" => Ok(Move::Place(1)),
+            "3" => Ok(Move::Place(2)),
+            _ => Err(format!("Invalid move {}, valid moves are 1, 2, 3", s)),
+        }
+    }
+}
+
+impl game_controller::Move for Move {}
+
+impl Display for State {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for i in 0..3 {
+            writeln!(f, "-------")?;
+            write!(f, "|")?;
+            for j in 0..3 {
+                write!(f, "{}|", self.max_side.rows[j].0[i])?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "-------")?;
+        writeln!(f)?;
+
+        for i in 0..3 {
+            writeln!(f, "-------")?;
+            write!(f, "|")?;
+            for j in 0..3 {
+                write!(f, "{}|", self.min_side.rows[j].0[2 - i])?;
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "-------")?;
+        writeln!(f, " 1 2 3 ")?;
+        if let Some(roll) = self.dice_roll {
+            writeln!(f, "Roll: {}", roll)?;
+        }
+        Ok(())
+    }
+}
+
+impl game_controller::State for State {
+    fn player(&self) -> game_controller::Player {
+        match self.last_player {
+            Player::Min => game_controller::Player::Human,
+            Player::Max => game_controller::Player::Computer,
+        }
+    }
+
+    fn status(&self) -> Status {
+        if self.min_side.is_full() || self.max_side.is_full() {
+            let min_score = self.min_side.score();
+            let max_score = self.max_side.score();
+            if min_score > max_score {
+                Status::Done {
+                    winner: game_controller::Player::Human,
+                }
+            } else if max_score > min_score {
+                Status::Done {
+                    winner: game_controller::Player::Computer,
+                }
+            } else {
+                Status::Draw
+            }
+        } else {
+            Status::Playing
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use ahash::HashSet;
     use super::*;
     use crate::expecti_min_max::{alpha_beta_star, Strategy as StrategyT};
+    use ahash::HashSet;
 
     #[test]
     fn row_is_full() {
@@ -342,18 +513,38 @@ mod tests {
         let moves = Strategy::possible_moves(&state);
         match moves {
             Moves::Player(moves) => {
-                assert_eq!(moves.into_iter().collect::<HashSet<_>>(), [Move::Place(0), Move::Place(1), Move::Place(2)].into_iter().collect())
+                assert_eq!(
+                    moves.into_iter().collect::<HashSet<_>>(),
+                    [Move::Place(0), Move::Place(1), Move::Place(2)]
+                        .into_iter()
+                        .collect()
+                )
             }
-            _ => {panic!()}
+            _ => {
+                panic!()
+            }
         }
     }
 
     #[test]
-    fn alpha_beta_empty() {
-        let mut state = State::empty();
+    fn score() {
         let mut strategy = Strategy::new();
-        state.dice_roll = Some(DiceRoll::Five);
-        let result = alpha_beta_star(&mut strategy, &state, 20);
+        let mut state = State::empty();
+        state.min_side = state.min_side.update(0, |r| r.add(DiceRoll::Six).add(DiceRoll::Three));
+        state.max_side = state.max_side.update(2, |r| r.add(DiceRoll::Three));
+
+        assert_eq!(strategy.score(&state, Player::Min), 6);
+        assert_eq!(strategy.score(&state, Player::Max), -6);
+    }
+
+    #[test]
+    fn alpha_beta_second_move() {
+        let mut state = State::empty();
+        state.min_side = state.min_side.update(0, |r| r.add(DiceRoll::Six));
+        let mut strategy = Strategy::new();
+        state = strategy.do_move(&state, &Move::Roll(DiceRoll::Six), Player::Max);
+
+        let result = alpha_beta_star(&mut strategy, &state, 2);
         println!("{:?}", result);
     }
 }
